@@ -1,0 +1,17 @@
+{
+  "SourceFilePath": "lask.config.yaml",
+  "Layers": [
+    {
+      "Type": 0,
+      "LayerNumber": 0,
+      "StateHash": "f0c61c46bb8f04105306bfa5f18bb5df099f85d3e1126a02228bb93c4ffe7c0c",
+      "PromptHashes": null,
+      "PromptApplications": null,
+      "DiffFilePath": null,
+      "CreatedAt": "2025-12-20T04:07:22.317154+00:00",
+      "Description": "Original source file"
+    }
+  ],
+  "CurrentLayerNumber": 0,
+  "LastModified": "2025-12-20T04:07:22.317173+00:00"
+}
