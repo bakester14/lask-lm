@@ -4,12 +4,9 @@
 # Command execution settings (for 'lask --build', 'lask --test', etc.)
 # Note: -graph flag required for dotnet to prevent race condition with shadow symlinks
 commands:
-  build:
-    command: "dotnet build -graph"
-    useShadow: true
-  test:
-    command: "dotnet test -graph"
-    useShadow: true
+  run:
+    command: "python3 -m main.py"
+    useShadow: false
 
 # Marker syntax configuration (uncomment to customize)
 # marker:
@@ -31,7 +28,14 @@ commands:
 #   # Max tokens for response (default: 2000)
 #   maxTokens: 2000
 
-# File processing settings (uncomment to customize)
+# File processing settings
+files:
+  # Exclude config file to avoid false positive markers from example text
+  exclude:
+    - "lask.config.yaml"
+    - "**/lask.config.yaml"
+
+# Example file settings (uncomment to customize further)
 # files:
 #   # Glob patterns to include (default: common code files)
 #   include:

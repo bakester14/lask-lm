@@ -1,0 +1,55 @@
+{
+  "SourceFilePath": "main.lask.py",
+  "Layers": [
+    {
+      "Type": 0,
+      "LayerNumber": 0,
+      "StateHash": "acc59fb3bfdae994d4be7847874153693d2a684dbbae277cc34b55ba35313bfd",
+      "PromptHashes": null,
+      "PromptApplications": null,
+      "DiffFilePath": null,
+      "CreatedAt": "2025-12-20T20:58:23.909899+00:00",
+      "Description": "Original source file"
+    },
+    {
+      "Type": 1,
+      "LayerNumber": 1,
+      "StateHash": "cf603e7740f7f7cbf211c7b240f8426c0bf602353290cdb3c9a52adbb0dfaec1",
+      "PromptHashes": [
+        "1bdf760b395ce3e45c41f2b2692e9039019409aa8f700053413ae199c4d72e4f"
+      ],
+      "PromptApplications": [
+        {
+          "PromptHash": "1bdf760b395ce3e45c41f2b2692e9039019409aa8f700053413ae199c4d72e4f",
+          "PromptText": "Write a basic \u0022hello world\u0022 program in Python.",
+          "LineNumber": 0,
+          "EndLineNumber": 0,
+          "IsMultiLine": false,
+          "LineCount": 1,
+          "Metadata": {
+            "Provider": null,
+            "Model": null,
+            "Temperature": null,
+            "MaxTokens": null,
+            "SystemPrompt": null,
+            "ApiEndpoint": null,
+            "ContextFiles": null,
+            "LayerDeferral": null,
+            "AdditionalDirectives": null,
+            "Scope": null,
+            "OutputFiles": null,
+            "DependsOn": null
+          },
+          "Response": "print(\u0022Hello, World!\u0022)",
+          "Scope": "line",
+          "TargetFilePath": null
+        }
+      ],
+      "DiffFilePath": null,
+      "CreatedAt": "2025-12-20T20:58:26.50021+00:00",
+      "Description": "Prompt Layer 1 (1 prompts)"
+    }
+  ],
+  "CurrentLayerNumber": 1,
+  "LastModified": "2025-12-20T20:58:26.500255+00:00"
+}
