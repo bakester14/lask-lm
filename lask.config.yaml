@@ -5,7 +5,7 @@
 # Note: -graph flag required for dotnet to prevent race condition with shadow symlinks
 commands:
   run:
-    command: "python3 -m main.py"
+    command: ".venv/bin/python3 -m main.py"
     useShadow: false
 
 # Marker syntax configuration (uncomment to customize)
@@ -84,8 +84,9 @@ files:
 #   strategy: "temp"
 
 # Augmented generation settings (uncomment to customize)
-# generation:
-#   # Enable augmented generation (build-test-fix loop) by default
-#   augmented: false
-#   # Maximum fix attempts per prompt (default: 3)
-#   maxFixAttempts: 3
+generation:
+  # Use augmented generation for better results (default: true)
+  augmented: true
+  # Maximum fix attempts per prompt (default: 3)
+  maxFixAttempts: 3
+  validationCommand: "run"

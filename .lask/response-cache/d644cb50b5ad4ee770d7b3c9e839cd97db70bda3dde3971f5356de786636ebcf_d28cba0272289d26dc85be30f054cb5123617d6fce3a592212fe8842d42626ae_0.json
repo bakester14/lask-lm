@@ -1,8 +1,0 @@
-{
-  "ResponseText": "print(\u0022Hello, World!\u0022)",
-  "PromptHash": "d644cb50b5ad4ee770d7b3c9e839cd97db70bda3dde3971f5356de786636ebcf",
-  "BaseStateHash": "d28cba0272289d26dc85be30f054cb5123617d6fce3a592212fe8842d42626ae",
-  "PromptText": "Write a basic \u0022hello world\u0022",
-  "CachedAt": "2025-12-20T20:58:22.058148+00:00",
-  "ContextContentHash": ""
-}

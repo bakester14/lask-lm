@@ -1,1 +1,1 @@
-# @ Write a basic "hello world" program in Python.
+# @ Write a basic langchain function to process a given text and return the processed text
