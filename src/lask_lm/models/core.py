@@ -1,7 +1,8 @@
 """Core Pydantic models for the Implement agent's recursive decomposition."""
 
+import operator
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Any
 from pydantic import BaseModel, Field
 
 
@@ -136,6 +137,45 @@ class FileTarget(BaseModel):
     )
 
 
+# Reducer functions for parallel state aggregation
+def merge_dicts(left: dict, right: dict) -> dict:
+    """Merge two dictionaries, with right taking precedence."""
+    if not left:
+        return right
+    if not right:
+        return left
+    return {**left, **right}
+
+
+def merge_lists(left: list, right: list) -> list:
+    """Merge two lists, removing duplicates while preserving order."""
+    if not left:
+        return right
+    if not right:
+        return left
+    seen = set()
+    result = []
+    for item in left + right:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def max_int(left: int, right: int) -> int:
+    """Return the maximum of two integers."""
+    return max(left, right)
+
+
+def append_prompts(left: list, right: list) -> list:
+    """Append prompts from right to left (allows duplicates for ordering)."""
+    if not left:
+        return right or []
+    if not right:
+        return left
+    return left + right
+
+
 class ImplementState(BaseModel):
     """
     State that flows through the LangGraph implement agent.
@@ -178,3 +218,54 @@ class ImplementState(BaseModel):
     # Metadata
     current_depth: int = Field(default=0, description="Current recursion depth")
     max_depth: int = Field(default=10, description="Safety limit on recursion")
+
+
+# TypedDict-based state for parallel LangGraph execution with reducers
+from typing_extensions import TypedDict
+
+
+class ParallelImplementState(TypedDict, total=False):
+    """
+    TypedDict-based state for parallel execution with LangGraph reducers.
+
+    Uses Annotated types with reducer functions to automatically merge
+    results from parallel node executions.
+    """
+    # Input (no reducer needed - set once at start)
+    plan_summary: str
+    target_files: list[FileTarget]
+    max_depth: int
+
+    # Decomposition tree - merge dicts from parallel workers
+    nodes: Annotated[dict[str, CodeNode], merge_dicts]
+    root_node_ids: list[str]  # Set once by router
+
+    # Processing queue - NO reducer (last write wins from aggregator)
+    # The aggregator rebuilds this from node statuses after each round
+    pending_node_ids: list[str]
+
+    # Contract registry - merge dicts from parallel workers
+    contract_registry: Annotated[dict[str, Contract], merge_dicts]
+
+    # Final output - append prompts in order
+    lask_prompts: Annotated[list[LaskPrompt], append_prompts]
+
+    # Metadata - take the max depth reached
+    current_depth: Annotated[int, max_int]
+
+
+class SingleNodeState(TypedDict, total=False):
+    """
+    State passed to a single parallel decomposer instance via Send().
+
+    Contains just the node to process plus read-only context.
+    """
+    # The specific node to process
+    node_id: str
+    node: CodeNode
+
+    # Read-only context from parent state
+    plan_summary: str
+    contract_registry: dict[str, Contract]
+    current_depth: int
+    max_depth: int

@@ -11,7 +11,7 @@ import sys
 from typing import Any
 
 from lask_lm.models import ImplementState, FileTarget, FileOperation
-from lask_lm.agents.implement.graph import compile_implement_graph
+from lask_lm.agents.implement import compile_implement_graph
 
 
 def list_tools() -> dict:

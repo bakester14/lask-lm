@@ -36,10 +36,15 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 - [x] End-to-end test demonstrating streaming execution
 - [x] MCP server for Claude Code integration
 
-### Phase 4: Parallel Spawning ⬜ NOT STARTED
-- [ ] Use LangGraph `Send()` API for parallel sibling processing
-- [ ] Fan-out at each decomposition level
-- [ ] Aggregate results before continuing
+### Phase 4: Parallel Spawning ✅ COMPLETE
+- [x] Use LangGraph `Send()` API for parallel sibling processing
+- [x] Fan-out at each decomposition level via `dispatch_to_parallel` routing
+- [x] Aggregate results via `aggregator_node` that rebuilds pending from node statuses
+- [x] State reducers (`merge_dicts`, `append_prompts`, `max_int`) for merging parallel results
+- [x] Unit tests for all components (22 tests passing)
+- [x] E2E test demonstrating parallel execution with multiple files
+- [x] Consolidated to single implementation (removed sequential graph.py and nodes.py)
+- [x] Compatibility tests ensuring backwards-compatible API (11 tests passing)
 
 ### Phase 5: Contract Registry ⬜ NOT STARTED
 - [ ] Register contracts from each node as they're created
@@ -65,23 +70,29 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 ```
 src/lask_lm/
 ├── models/
-│   └── core.py              # CodeNode, ImplementState, LaskPrompt
+│   └── core.py              # CodeNode, ImplementState, LaskPrompt, ParallelImplementState, reducers
 ├── agents/
 │   └── implement/
-│       ├── graph.py         # LangGraph definition
-│       ├── nodes.py         # Node implementations
+│       ├── parallel_graph.py # LangGraph with Send() API (primary implementation)
 │       ├── prompts.py       # Decomposition prompts
 │       └── schemas.py       # LLM output schemas
 ├── tools/                   # (placeholder for LASK emitter tools)
 ├── main.py                  # Entry point
 └── mcp_server.py            # MCP server for Claude Code
+
+tests/
+├── test_parallel_graph.py       # Unit tests for parallel spawning (22 tests)
+└── test_graph_compatibility.py  # Compatibility tests for API (11 tests)
 ```
 
 ## Testing
 
 ```bash
-# Run end-to-end test
+# Run all tests (33 total: 22 parallel + 11 compatibility)
 source .venv/bin/activate
+PYTHONPATH=src python -m pytest tests/ -v
+
+# Run end-to-end test (includes parallel demo)
 PYTHONPATH=src python test_e2e.py
 
 # Test MCP server
