@@ -303,15 +303,22 @@ class TestParallelDecomposerNode:
 class TestCollectorNode:
     """Test the collector_node function."""
 
-    def test_passthrough(self):
-        """collector_node is a passthrough that returns empty dict."""
+    def test_returns_grouped_output(self):
+        """collector_node returns grouped_output with empty state."""
         state: ParallelImplementState = {
             "lask_prompts": [Mock(), Mock()],
+            "nodes": {},
+            "root_node_ids": [],
+            "target_files": [],
+            "plan_summary": "test plan",
         }
 
         result = collector_node(state)
 
-        assert result == {}
+        assert "grouped_output" in result
+        assert result["grouped_output"].plan_summary == "test plan"
+        assert result["grouped_output"].files == []
+        assert result["grouped_output"].total_prompts == 0
 
 
 class TestGraphCreation:

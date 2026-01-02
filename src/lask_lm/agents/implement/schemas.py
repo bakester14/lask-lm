@@ -61,3 +61,7 @@ class LaskPromptOutput(BaseModel):
     context_files: list[str] = Field(description="Files to include via @context directive (empty list if none)")
     additional_directives: list[DirectiveOutput] = Field(description="Other directives like model, temperature (empty list if none)")
     notes: str = Field(description="Any notes about what code should be generated, or empty string if none")
+    # MODIFY-specific fields (empty string if not applicable)
+    # Note: defaults added for backwards compatibility with tests
+    insertion_point: str = Field(default="", description="For MODIFY: where to insert (e.g., 'after method GetById'). Empty string if not applicable.")
+    replaces: str = Field(default="", description="For MODIFY: description of code being replaced. Empty string if not applicable.")

@@ -28,6 +28,13 @@ class FileOperation(str, Enum):
     MODIFY = "modify"
 
 
+class OperationType(str, Enum):
+    """Type of modification operation for MODIFY mode."""
+    INSERT = "insert"
+    REPLACE = "replace"
+    DELETE = "delete"
+
+
 class Contract(BaseModel):
     """
     Interface contract that a CodeNode exposes to its siblings/children.
@@ -134,6 +141,78 @@ class FileTarget(BaseModel):
     existing_content: str | None = Field(
         default=None,
         description="For MODIFY: the current file content"
+    )
+
+
+class LocationMetadata(BaseModel):
+    """Location information for MODIFY operations."""
+    insertion_point: str | None = Field(
+        default=None,
+        description="Human-readable insertion point (e.g., 'after method GetById')"
+    )
+    line_range: tuple[int, int] | None = Field(
+        default=None,
+        description="Start and end line numbers (1-indexed) - populated by Phase 6"
+    )
+    ast_path: str | None = Field(
+        default=None,
+        description="Structural path (e.g., 'class Foo > method Bar') - populated by Phase 6"
+    )
+
+
+class ModifyOperation(BaseModel):
+    """A single modification operation in a MODIFY manifest."""
+    operation_id: str = Field(description="Unique ID for this operation")
+    operation_type: OperationType = Field(description="INSERT, REPLACE, or DELETE")
+    location: LocationMetadata = Field(description="Where in the file to apply")
+    replaces: str | None = Field(
+        default=None,
+        description="Description of code being replaced (for REPLACE ops)"
+    )
+    intent: str = Field(description="What this modification accomplishes")
+    directives: list[LaskDirective] = Field(
+        default_factory=list,
+        description="LASK directives for this operation"
+    )
+
+
+class ModifyManifest(BaseModel):
+    """Manifest for MODIFY operations on a single file."""
+    manifest_version: str = Field(default="1.0", description="Schema version")
+    target_file: str = Field(description="File path being modified")
+    existing_content_hash: str | None = Field(
+        default=None,
+        description="Hash of original content for validation"
+    )
+    operations: list[ModifyOperation] = Field(
+        default_factory=list,
+        description="Ordered list of modifications"
+    )
+
+
+class OrderedFilePrompts(BaseModel):
+    """Prompts for a single file in tree-traversal order."""
+    file_path: str = Field(description="Target file path")
+    operation: FileOperation = Field(description="CREATE or MODIFY")
+    prompts: list[LaskPrompt] = Field(
+        description="LASK prompts in depth-first tree order"
+    )
+    modify_manifest: ModifyManifest | None = Field(
+        default=None,
+        description="MODIFY manifest with location metadata (only for MODIFY operations)"
+    )
+
+
+class GroupedOutput(BaseModel):
+    """Final grouped output from the implement agent."""
+    plan_summary: str = Field(description="Original plan summary")
+    files: list[OrderedFilePrompts] = Field(
+        description="Outputs grouped by file, each with ordered prompts"
+    )
+    total_prompts: int = Field(description="Total number of prompts generated")
+    has_modify_operations: bool = Field(
+        default=False,
+        description="True if any files use MODIFY mode"
     )
 
 
@@ -252,6 +331,9 @@ class ParallelImplementState(TypedDict, total=False):
 
     # Metadata - take the max depth reached
     current_depth: Annotated[int, max_int]
+
+    # Grouped output (set by collector_node)
+    grouped_output: GroupedOutput | None
 
 
 class SingleNodeState(TypedDict, total=False):

@@ -46,6 +46,15 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 - [x] Consolidated to single implementation (removed sequential graph.py and nodes.py)
 - [x] Compatibility tests ensuring backwards-compatible API (11 tests passing)
 
+### Phase 4.5: Grouped Output & MODIFY Manifest ✅ COMPLETE
+- [x] New models: `OperationType`, `LocationMetadata`, `ModifyOperation`, `ModifyManifest`, `OrderedFilePrompts`, `GroupedOutput`
+- [x] Tree traversal to preserve prompt order (`_depth_first_collect_prompts`)
+- [x] `collector_node` groups prompts by file with tree-traversal ordering
+- [x] MODIFY manifest generation with location-based metadata
+- [x] `LaskPromptOutput` schema extended with `insertion_point` and `replaces` fields
+- [x] Unit tests for grouped output (16 tests)
+- [x] All 48 tests passing
+
 ### Phase 5: Contract Registry ⬜ NOT STARTED
 - [ ] Register contracts from each node as they're created
 - [ ] Resolve contract dependencies before emitting LASK prompts
@@ -70,25 +79,26 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 ```
 src/lask_lm/
 ├── models/
-│   └── core.py              # CodeNode, ImplementState, LaskPrompt, ParallelImplementState, reducers
+│   └── core.py              # CodeNode, ImplementState, LaskPrompt, GroupedOutput, ModifyManifest, reducers
 ├── agents/
 │   └── implement/
-│       ├── parallel_graph.py # LangGraph with Send() API (primary implementation)
+│       ├── parallel_graph.py # LangGraph with Send() API, tree traversal, grouped output
 │       ├── prompts.py       # Decomposition prompts
-│       └── schemas.py       # LLM output schemas
+│       └── schemas.py       # LLM output schemas (including MODIFY fields)
 ├── tools/                   # (placeholder for LASK emitter tools)
 ├── main.py                  # Entry point
 └── mcp_server.py            # MCP server for Claude Code
 
 tests/
 ├── test_parallel_graph.py       # Unit tests for parallel spawning (22 tests)
-└── test_graph_compatibility.py  # Compatibility tests for API (11 tests)
+├── test_graph_compatibility.py  # Compatibility tests for API (11 tests)
+└── test_grouped_output.py       # Tests for grouped output and MODIFY manifest (16 tests)
 ```
 
 ## Testing
 
 ```bash
-# Run all tests (33 total: 22 parallel + 11 compatibility)
+# Run all tests (48 total)
 source .venv/bin/activate
 PYTHONPATH=src python -m pytest tests/ -v
 

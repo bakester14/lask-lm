@@ -20,10 +20,16 @@ from lask_lm.models import (
     NodeType,
     NodeStatus,
     FileOperation,
+    OperationType,
     Contract,
     LaskPrompt,
     LaskDirective,
     FileTarget,
+    LocationMetadata,
+    ModifyOperation,
+    ModifyManifest,
+    OrderedFilePrompts,
+    GroupedOutput,
 )
 from .prompts import SYSTEM_PROMPT_BASE, DECOMPOSITION_PROMPTS
 from .schemas import (
@@ -457,6 +463,9 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
         file_path=node.context_files[0] if node.context_files else "unknown",
         intent=response.intent,
         directives=directives,
+        # Include MODIFY metadata if provided (empty string becomes None)
+        insertion_point=response.insertion_point if response.insertion_point else None,
+        replaces=response.replaces if response.replaces else None,
     )
 
     updated_node = node.model_copy()
@@ -470,15 +479,168 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
     }
 
 
+# =============================================================================
+# Tree Traversal and Grouping Functions
+# =============================================================================
+
+def _depth_first_collect_prompts(
+    node_id: str,
+    nodes: dict[str, CodeNode],
+    collected: list[LaskPrompt],
+) -> None:
+    """
+    Recursively collect LASK prompts in depth-first order.
+
+    Follows children_ids ordering to preserve code structure order.
+    """
+    node = nodes.get(node_id)
+    if not node:
+        return
+
+    # If this node has a prompt (terminal node), add it
+    if node.lask_prompt:
+        collected.append(node.lask_prompt)
+
+    # Recurse into children in order
+    for child_id in node.children_ids:
+        _depth_first_collect_prompts(child_id, nodes, collected)
+
+
+def _build_file_to_root_mapping(
+    root_node_ids: list[str],
+    nodes: dict[str, CodeNode],
+    target_files: list[FileTarget],
+) -> dict[str, tuple[str, FileTarget]]:
+    """
+    Build mapping from file_path to (root_node_id, FileTarget).
+
+    Returns dict[file_path, (root_node_id, file_target)]
+    """
+    mapping = {}
+
+    # Create lookup for target files by path
+    target_by_path = {f.path: f for f in target_files}
+
+    for root_id in root_node_ids:
+        node = nodes.get(root_id)
+        if node and node.context_files:
+            file_path = node.context_files[0]
+            file_target = target_by_path.get(file_path)
+            if file_target:
+                mapping[file_path] = (root_id, file_target)
+
+    return mapping
+
+
+def _build_modify_manifest(
+    file_path: str,
+    prompts: list[LaskPrompt],
+    file_target: FileTarget,
+) -> ModifyManifest:
+    """
+    Build a MODIFY manifest from prompts with location metadata.
+
+    Uses insertion_point and replaces fields from LaskPrompt to
+    construct location-aware operations.
+    """
+    import hashlib
+
+    # Compute content hash if existing content is available
+    content_hash = None
+    if file_target.existing_content:
+        content_hash = hashlib.sha256(
+            file_target.existing_content.encode()
+        ).hexdigest()[:16]
+
+    operations = []
+    for i, prompt in enumerate(prompts):
+        # Determine operation type based on prompt fields
+        if prompt.replaces:
+            op_type = OperationType.REPLACE
+        elif prompt.insertion_point:
+            op_type = OperationType.INSERT
+        else:
+            # Default to INSERT at end for prompts without location info
+            op_type = OperationType.INSERT
+
+        location = LocationMetadata(
+            insertion_point=prompt.insertion_point,
+            # line_range and ast_path will be populated by Phase 6 AST parsing
+            line_range=None,
+            ast_path=None,
+        )
+
+        operation = ModifyOperation(
+            operation_id=f"op_{i:03d}",
+            operation_type=op_type,
+            location=location,
+            replaces=prompt.replaces,
+            intent=prompt.intent,
+            directives=prompt.directives,
+        )
+        operations.append(operation)
+
+    return ModifyManifest(
+        manifest_version="1.0",
+        target_file=file_path,
+        existing_content_hash=content_hash,
+        operations=operations,
+    )
+
+
 def collector_node(state: ParallelImplementState) -> dict:
     """
-    Final node: collects all LASK prompts and prepares output.
+    Final node: transforms flat prompt list into grouped, ordered output.
 
-    At this point, all parallel decomposers have finished and
-    their results have been merged via reducers.
+    Performs depth-first traversal of the decomposition tree to:
+    1. Group prompts by file_path
+    2. Order prompts within each file by tree structure
+    3. Generate MODIFY manifests for MODIFY operations
     """
-    # Just pass through - the reducers have already done the work
-    return {}
+    nodes = state.get("nodes", {})
+    root_node_ids = state.get("root_node_ids", [])
+    target_files = state.get("target_files", [])
+    plan_summary = state.get("plan_summary", "")
+
+    # Build file path to root node mapping
+    file_mapping = _build_file_to_root_mapping(root_node_ids, nodes, target_files)
+
+    # Collect prompts for each file in order
+    grouped_files = []
+    total_prompts = 0
+    has_modify = False
+
+    for file_path, (root_id, file_target) in file_mapping.items():
+        # Collect prompts in depth-first order for this file's tree
+        ordered_prompts: list[LaskPrompt] = []
+        _depth_first_collect_prompts(root_id, nodes, ordered_prompts)
+
+        # Filter to only prompts for this file (in case of cross-file references)
+        file_prompts = [p for p in ordered_prompts if p.file_path == file_path]
+        total_prompts += len(file_prompts)
+
+        # Build MODIFY manifest if applicable
+        modify_manifest = None
+        if file_target.operation == FileOperation.MODIFY:
+            has_modify = True
+            modify_manifest = _build_modify_manifest(file_path, file_prompts, file_target)
+
+        grouped_files.append(OrderedFilePrompts(
+            file_path=file_path,
+            operation=file_target.operation,
+            prompts=file_prompts,
+            modify_manifest=modify_manifest,
+        ))
+
+    # Create the grouped output
+    grouped_output = GroupedOutput(
+        plan_summary=plan_summary,
+        files=grouped_files,
+        total_prompts=total_prompts,
+        has_modify_operations=has_modify,
+    )
+
+    return {"grouped_output": grouped_output}
 
 
 def create_parallel_implement_graph() -> StateGraph:
