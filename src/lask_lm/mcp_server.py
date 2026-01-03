@@ -10,12 +10,27 @@ import json
 import sys
 from typing import Any
 
-from lask_lm.models import ImplementState, FileTarget, FileOperation
+from lask_lm.models import ImplementState, FileTarget, FileOperation, Contract
 from lask_lm.agents.implement import compile_implement_graph
 
 
 def list_tools() -> dict:
     """Return available tools."""
+    contract_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Contract identifier (e.g., 'IUserService')"},
+            "signature": {"type": "string", "description": "Type signature or interface definition"},
+            "description": {"type": "string", "description": "What this contract provides"},
+            "context_files": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Files to reference via @context directive"
+            }
+        },
+        "required": ["name", "signature", "description"]
+    }
+
     return {
         "tools": [
             {
@@ -37,10 +52,20 @@ def list_tools() -> dict:
                                     "path": {"type": "string", "description": "File path"},
                                     "operation": {"type": "string", "enum": ["create", "modify"]},
                                     "description": {"type": "string", "description": "What the file should do"},
-                                    "language": {"type": "string", "description": "Programming language (default: csharp)"}
+                                    "language": {"type": "string", "description": "Programming language (default: csharp)"},
+                                    "contracts_provided": {
+                                        "type": "array",
+                                        "items": contract_schema,
+                                        "description": "Contracts this file is obligated to implement"
+                                    }
                                 },
                                 "required": ["path", "operation", "description"]
                             }
+                        },
+                        "external_contracts": {
+                            "type": "array",
+                            "items": contract_schema,
+                            "description": "Contracts from external files not being processed (available for dependency resolution)"
                         }
                     },
                     "required": ["plan_summary", "files"]
@@ -57,24 +82,43 @@ def call_tool(name: str, arguments: dict) -> dict:
     return {"error": f"Unknown tool: {name}"}
 
 
+def _parse_contract(c: dict) -> Contract:
+    """Parse a contract dict into a Contract model."""
+    return Contract(
+        name=c["name"],
+        signature=c["signature"],
+        description=c["description"],
+        context_files=c.get("context_files", []),
+    )
+
+
 def decompose_to_lask(args: dict) -> dict:
     """Run the implement agent to decompose a task into LASK prompts."""
     try:
-        # Build file targets
+        # Build file targets with their contract obligations
         files = [
             FileTarget(
                 path=f["path"],
                 operation=FileOperation(f.get("operation", "create")),
                 description=f["description"],
                 language=f.get("language", "csharp"),
+                contracts_provided=[
+                    _parse_contract(c) for c in f.get("contracts_provided", [])
+                ],
             )
             for f in args.get("files", [])
+        ]
+
+        # Parse external contracts
+        external_contracts = [
+            _parse_contract(c) for c in args.get("external_contracts", [])
         ]
 
         # Create state
         state = ImplementState(
             plan_summary=args["plan_summary"],
             target_files=files,
+            external_contracts=external_contracts,
         )
 
         # Run the graph

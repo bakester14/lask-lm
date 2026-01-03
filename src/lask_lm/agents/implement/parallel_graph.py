@@ -87,19 +87,33 @@ def router_node(state: ParallelImplementState | ImplementState) -> dict:
     """
     Entry point: creates root nodes for each target file.
 
-    Same as sequential version - creates FILE nodes and adds to pending.
+    Pre-registers external contracts and file-level contracts before dispatching.
     Accepts both ImplementState (Pydantic) and ParallelImplementState (dict).
     """
     nodes = {}
     root_ids = []
     pending = []
+    contract_registry = {}
 
     # Handle both Pydantic and dict state
     if isinstance(state, ImplementState):
         target_files = state.target_files
+        external_contracts = state.external_contracts
     else:
         target_files = state.get("target_files", [])
+        external_contracts = state.get("external_contracts", [])
 
+    # Pre-register external contracts (from files not being processed)
+    for contract in external_contracts:
+        contract_registry[contract.name] = contract
+
+    # Pre-register all file-level contracts before creating nodes
+    # This ensures inter-file dependencies are available from the start
+    for file_target in target_files:
+        for contract in file_target.contracts_provided:
+            contract_registry[contract.name] = contract
+
+    # Create FILE nodes with their contract obligations
     for file_target in target_files:
         node_id = _generate_node_id()
         node = CodeNode(
@@ -108,6 +122,7 @@ def router_node(state: ParallelImplementState | ImplementState) -> dict:
             intent=file_target.description,
             status=NodeStatus.PENDING,
             context_files=[file_target.path],
+            contracts_provided=file_target.contracts_provided,
         )
         nodes[node_id] = node
         root_ids.append(node_id)
@@ -117,6 +132,7 @@ def router_node(state: ParallelImplementState | ImplementState) -> dict:
         "nodes": nodes,
         "root_node_ids": root_ids,
         "pending_node_ids": pending,
+        "contract_registry": contract_registry,
     }
 
 
@@ -207,6 +223,12 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
     # Build context message
     context_parts = [f"Intent: {node.intent}"]
 
+    # Include contract obligations (what this node must provide)
+    if node.contracts_provided:
+        context_parts.append("Contracts this node MUST provide (obligations from plan):")
+        for c in node.contracts_provided:
+            context_parts.append(f"  - {c.name}: {c.signature} -- {c.description}")
+
     if node.contracts_required:
         # Validate contract lookup
         lookup_issues = validate_contract_lookup(
@@ -220,7 +242,7 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
             if name in contract_registry
         ]
         if required_contracts:
-            context_parts.append("Required contracts:")
+            context_parts.append("Required contracts (available dependencies):")
             for c in required_contracts:
                 if c:
                     context_parts.append(f"  - {c.name}: {c.signature}")

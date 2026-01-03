@@ -174,6 +174,10 @@ class FileTarget(BaseModel):
         default=None,
         description="For MODIFY: the current file content"
     )
+    contracts_provided: list[Contract] = Field(
+        default_factory=list,
+        description="Contracts this file is obligated to implement (from plan)"
+    )
 
 
 class LocationMetadata(BaseModel):
@@ -301,6 +305,10 @@ class ImplementState(BaseModel):
     # Input from Plan agent
     plan_summary: str = Field(description="Summary of what we're implementing")
     target_files: list[FileTarget] = Field(description="Files to create/modify")
+    external_contracts: list[Contract] = Field(
+        default_factory=list,
+        description="Contracts from external files not being processed by lask-lm"
+    )
 
     # Decomposition tree
     nodes: dict[str, CodeNode] = Field(
@@ -349,6 +357,7 @@ class ParallelImplementState(TypedDict, total=False):
     # Input (no reducer needed - set once at start)
     plan_summary: str
     target_files: list[FileTarget]
+    external_contracts: list[Contract]
     max_depth: int
 
     # Decomposition tree - merge dicts from parallel workers
