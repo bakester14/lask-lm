@@ -5,6 +5,10 @@ from .core import (
     NodeStatus,
     FileOperation,
     OperationType,
+    # Validation types
+    ValidationSeverity,
+    ContractValidationIssue,
+    # Core types
     CodeNode,
     Contract,
     LaskDirective,
@@ -32,6 +36,10 @@ __all__ = [
     "NodeStatus",
     "FileOperation",
     "OperationType",
+    # Validation types
+    "ValidationSeverity",
+    "ContractValidationIssue",
+    # Core types
     "CodeNode",
     "Contract",
     "LaskDirective",

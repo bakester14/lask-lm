@@ -35,6 +35,21 @@ class OperationType(str, Enum):
     DELETE = "delete"
 
 
+class ValidationSeverity(str, Enum):
+    """Severity level for contract validation issues."""
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class ContractValidationIssue(BaseModel):
+    """A single contract validation issue detected during decomposition."""
+    severity: ValidationSeverity = Field(description="Issue severity level")
+    code: str = Field(description="Error code (e.g., 'MISSING_CONTRACT', 'DUPLICATE_NAME', 'CIRCULAR_DEP')")
+    message: str = Field(description="Human-readable description of the issue")
+    node_id: str | None = Field(default=None, description="Related node ID if applicable")
+    contract_name: str | None = Field(default=None, description="Related contract name if applicable")
+
+
 class Contract(BaseModel):
     """
     Interface contract that a CodeNode exposes to its siblings/children.
@@ -78,6 +93,10 @@ class LaskPrompt(BaseModel):
         default=None,
         description="For MODIFY: description of code being replaced"
     )
+    resolved_contracts: list["Contract"] = Field(
+        default_factory=list,
+        description="Contracts required by this prompt, resolved from registry"
+    )
 
     def to_comment(self, comment_prefix: str = "//") -> str:
         """Render as a LASK-compatible comment."""
@@ -87,8 +106,21 @@ class LaskPrompt(BaseModel):
         for directive in self.directives:
             parts.append(f"@{directive.directive_type}({directive.value})")
 
-        # Add the intent
-        parts.append(self.intent)
+        # Add contract context files as @context directives (deduplicated)
+        existing_context = {d.value for d in self.directives if d.directive_type == "context"}
+        for contract in self.resolved_contracts:
+            for ctx_file in contract.context_files:
+                if ctx_file not in existing_context:
+                    parts.append(f"@context({ctx_file})")
+                    existing_context.add(ctx_file)
+
+        # Build intent with contract requirements appended
+        intent = self.intent
+        if self.resolved_contracts:
+            contract_info = ", ".join(f"{c.name}: {c.signature}" for c in self.resolved_contracts)
+            intent = f"{intent} [requires: {contract_info}]"
+
+        parts.append(intent)
 
         return f"{comment_prefix} @ {' '.join(parts)}"
 
@@ -214,6 +246,10 @@ class GroupedOutput(BaseModel):
         default=False,
         description="True if any files use MODIFY mode"
     )
+    validation_issues: list[ContractValidationIssue] = Field(
+        default_factory=list,
+        description="All contract validation issues detected during decomposition"
+    )
 
 
 # Reducer functions for parallel state aggregation
@@ -328,6 +364,9 @@ class ParallelImplementState(TypedDict, total=False):
 
     # Final output - append prompts in order
     lask_prompts: Annotated[list[LaskPrompt], append_prompts]
+
+    # Validation issues - append from parallel workers
+    validation_issues: Annotated[list[ContractValidationIssue], append_prompts]
 
     # Metadata - take the max depth reached
     current_depth: Annotated[int, max_int]

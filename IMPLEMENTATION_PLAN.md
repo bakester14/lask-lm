@@ -55,11 +55,16 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 - [x] Unit tests for grouped output (16 tests)
 - [x] All 48 tests passing
 
-### Phase 5: Contract Registry ⬜ NOT STARTED
-- [ ] Register contracts from each node as they're created
-- [ ] Resolve contract dependencies before emitting LASK prompts
-- [ ] Validate all required contracts are satisfied
-- [ ] Include contract signatures in LASK prompt context
+### Phase 5: Contract Registry ✅ COMPLETE
+- [x] Register contracts from each node as they're created
+- [x] Validate contract registration (detect duplicate names with conflicting signatures)
+- [x] Validate contract lookup (warn when required contracts not found)
+- [x] Resolve contract dependencies before emitting LASK prompts
+- [x] Validate all required contracts are satisfied (final check in collector_node)
+- [x] Detect circular dependencies (DFS-based cycle detection)
+- [x] Include contract signatures in LASK prompt context (`resolved_contracts` field)
+- [x] Propagate all validation issues to `GroupedOutput.validation_issues`
+- [x] Unit tests for validation (17 tests)
 
 ### Phase 6: MODIFY Support ⬜ NOT STARTED
 - [ ] Parse existing file structure (AST or heuristic)
@@ -79,10 +84,11 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 ```
 src/lask_lm/
 ├── models/
-│   └── core.py              # CodeNode, ImplementState, LaskPrompt, GroupedOutput, ModifyManifest, reducers
+│   └── core.py              # CodeNode, ImplementState, LaskPrompt, GroupedOutput, ModifyManifest, validation types, reducers
 ├── agents/
 │   └── implement/
-│       ├── parallel_graph.py # LangGraph with Send() API, tree traversal, grouped output
+│       ├── parallel_graph.py # LangGraph with Send() API, tree traversal, grouped output, validation integration
+│       ├── validation.py    # Contract registry validation functions
 │       ├── prompts.py       # Decomposition prompts
 │       └── schemas.py       # LLM output schemas (including MODIFY fields)
 ├── tools/                   # (placeholder for LASK emitter tools)
@@ -92,13 +98,14 @@ src/lask_lm/
 tests/
 ├── test_parallel_graph.py       # Unit tests for parallel spawning (22 tests)
 ├── test_graph_compatibility.py  # Compatibility tests for API (11 tests)
-└── test_grouped_output.py       # Tests for grouped output and MODIFY manifest (16 tests)
+├── test_grouped_output.py       # Tests for grouped output and MODIFY manifest (16 tests)
+└── test_contract_validation.py  # Tests for contract validation (17 tests)
 ```
 
 ## Testing
 
 ```bash
-# Run all tests (48 total)
+# Run all tests (65 total)
 source .venv/bin/activate
 PYTHONPATH=src python -m pytest tests/ -v
 

@@ -112,7 +112,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 
-# Run tests (48 total)
+# Run tests (65 total)
 PYTHONPATH=src python -m pytest tests/ -v
 
 # Run E2E demo
@@ -123,7 +123,7 @@ PYTHONPATH=src python test_e2e.py
 
 - [x] Phase 1-4: Core types, prompts, graph, parallel execution
 - [x] Phase 4.5: Grouped output, MODIFY manifests
-- [ ] Phase 5: Contract registry validation
+- [x] Phase 5: Contract registry validation
 - [ ] Phase 6: Full MODIFY support (AST parsing, SKIP detection)
 
 See `IMPLEMENTATION_PLAN.md` for details.

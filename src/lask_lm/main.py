@@ -1,13 +1,15 @@
 """Entry point for the LASK-LM implement agent."""
 
-from lask_lm.models import ImplementState, FileTarget, FileOperation
-from lask_lm.agents.implement import create_implement_graph, compile_implement_graph
+import sys
+
+from lask_lm.models import ImplementState, FileTarget, FileOperation, GroupedOutput
+from lask_lm.agents.implement import compile_implement_graph
 
 
 def run_implement_agent(
     plan_summary: str,
     target_files: list[dict],
-) -> list[dict]:
+) -> GroupedOutput:
     """
     Run the implement agent on a plan.
 
@@ -21,7 +23,7 @@ def run_implement_agent(
             - existing_content: For modify, the current content
 
     Returns:
-        List of LASK prompts ready to write to files
+        GroupedOutput containing prompts grouped by file and validation issues
     """
     # Convert to FileTarget objects
     files = [
@@ -45,23 +47,18 @@ def run_implement_agent(
     app = compile_implement_graph()
     final_state = app.invoke(initial_state)
 
-    # Extract prompts
-    return [
-        {
-            "file_path": p.file_path,
-            "comment": p.to_comment(),
-            "intent": p.intent,
-            "directives": [
-                {"type": d.directive_type, "value": d.value}
-                for d in p.directives
-            ],
-        }
-        for p in final_state["lask_prompts"]
-    ]
+    return final_state["grouped_output"]
 
 
-if __name__ == "__main__":
-    # Example usage
+def main() -> int:
+    """
+    CLI entry point. Returns exit code based on validation issues.
+
+    Exit codes:
+        0: Success, no validation issues
+        1: Validation issues detected (warnings or errors)
+    """
+    # Example usage - in practice this would parse CLI args
     result = run_implement_agent(
         plan_summary="Create a simple user service with CRUD operations",
         target_files=[
@@ -74,7 +71,28 @@ if __name__ == "__main__":
         ],
     )
 
+    # Print generated prompts
     print("Generated LASK prompts:")
-    for prompt in result:
-        print(f"\n{prompt['file_path']}:")
-        print(f"  {prompt['comment']}")
+    for file_output in result.files:
+        print(f"\n=== {file_output.file_path} ({file_output.operation.value}) ===")
+        for prompt in file_output.prompts:
+            print(f"  {prompt.to_comment()}")
+
+    # Print validation issues if any
+    if result.validation_issues:
+        print(f"\n{'='*60}")
+        print(f"Validation issues ({len(result.validation_issues)}):")
+        for issue in result.validation_issues:
+            print(f"  [{issue.severity.value.upper()}] {issue.code}: {issue.message}")
+            if issue.node_id:
+                print(f"           node: {issue.node_id}")
+            if issue.contract_name:
+                print(f"           contract: {issue.contract_name}")
+        return 1
+
+    print(f"\nSuccess: {result.total_prompts} prompts generated, no validation issues.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

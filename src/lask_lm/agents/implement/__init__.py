@@ -16,6 +16,12 @@ from .parallel_graph import (
     dispatch_to_parallel,
 )
 from .prompts import DECOMPOSITION_PROMPTS
+from .validation import (
+    validate_contract_registration,
+    validate_contract_lookup,
+    validate_all_dependencies_satisfied,
+    detect_circular_dependencies,
+)
 
 __all__ = [
     # Main API
@@ -32,4 +38,9 @@ __all__ = [
     "dispatch_to_parallel",
     # Prompts
     "DECOMPOSITION_PROMPTS",
+    # Validation
+    "validate_contract_registration",
+    "validate_contract_lookup",
+    "validate_all_dependencies_satisfied",
+    "detect_circular_dependencies",
 ]

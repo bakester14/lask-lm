@@ -30,6 +30,13 @@ from lask_lm.models import (
     ModifyManifest,
     OrderedFilePrompts,
     GroupedOutput,
+    ContractValidationIssue,
+)
+from .validation import (
+    validate_contract_registration,
+    validate_contract_lookup,
+    validate_all_dependencies_satisfied,
+    detect_circular_dependencies,
 )
 from .prompts import SYSTEM_PROMPT_BASE, DECOMPOSITION_PROMPTS
 from .schemas import (
@@ -185,6 +192,9 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
     max_depth = state.get("max_depth", 10)
     contract_registry = state.get("contract_registry", {})
 
+    # Collect validation issues during processing
+    validation_issues: list[ContractValidationIssue] = []
+
     # Safety check - force terminal if too deep
     if current_depth >= max_depth:
         return _emit_terminal_parallel(node, contract_registry)
@@ -198,6 +208,12 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
     context_parts = [f"Intent: {node.intent}"]
 
     if node.contracts_required:
+        # Validate contract lookup
+        lookup_issues = validate_contract_lookup(
+            node.contracts_required, contract_registry, node.node_id
+        )
+        validation_issues.extend(lookup_issues)
+
         required_contracts = [
             contract_registry.get(name)
             for name in node.contracts_required
@@ -220,31 +236,45 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
 
     if node.node_type == NodeType.FILE:
         response = _structured_output(llm, DecomposeFileOutput).invoke(messages)
-        return _process_file_decomposition_parallel(node, response, current_depth)
+        result = _process_file_decomposition_parallel(node, response, current_depth, contract_registry)
+        # Merge validation issues
+        result_issues = result.get("validation_issues", [])
+        result["validation_issues"] = validation_issues + result_issues
+        return result
 
     elif node.node_type == NodeType.CLASS:
         response = _structured_output(llm, DecomposeClassOutput).invoke(messages)
-        return _process_class_decomposition_parallel(node, response, current_depth)
+        result = _process_class_decomposition_parallel(node, response, current_depth, contract_registry)
+        result_issues = result.get("validation_issues", [])
+        result["validation_issues"] = validation_issues + result_issues
+        return result
 
     elif node.node_type == NodeType.METHOD:
         response = _structured_output(llm, DecomposeMethodOutput).invoke(messages)
-        return _process_method_decomposition_parallel(node, response, current_depth)
+        result = _process_method_decomposition_parallel(node, response, current_depth, contract_registry)
+        result_issues = result.get("validation_issues", [])
+        result["validation_issues"] = validation_issues + result_issues
+        return result
 
     elif node.node_type == NodeType.BLOCK:
-        return _emit_terminal_parallel(node, contract_registry)
+        result = _emit_terminal_parallel(node, contract_registry)
+        result["validation_issues"] = validation_issues
+        return result
 
-    return {}
+    return {"validation_issues": validation_issues}
 
 
 def _process_file_decomposition_parallel(
     node: CodeNode,
     response: DecomposeFileOutput,
     current_depth: int,
+    contract_registry: dict[str, Contract],
 ) -> dict:
     """Process FILE decomposition response in parallel context."""
     new_nodes = {}
     new_pending = []
     new_contracts = {}
+    validation_issues: list[ContractValidationIssue] = []
 
     # Mark current node as decomposing
     updated_node = node.model_copy()
@@ -293,8 +323,13 @@ def _process_file_decomposition_parallel(
         child_ids.append(child_id)
         new_pending.append(child_id)
 
-        # Register contracts
+        # Register contracts with validation
         for contract in child_node.contracts_provided:
+            # Check existing registry + new contracts being registered
+            combined_registry = {**contract_registry, **new_contracts}
+            issue = validate_contract_registration(contract, combined_registry)
+            if issue:
+                validation_issues.append(issue)
             new_contracts[contract.name] = contract
 
     # Update parent with children
@@ -306,6 +341,7 @@ def _process_file_decomposition_parallel(
         "nodes": new_nodes,
         "contract_registry": new_contracts,
         "current_depth": current_depth + 1,
+        "validation_issues": validation_issues,
     }
 
 
@@ -313,11 +349,13 @@ def _process_class_decomposition_parallel(
     node: CodeNode,
     response: DecomposeClassOutput,
     current_depth: int,
+    contract_registry: dict[str, Contract],
 ) -> dict:
     """Process CLASS decomposition response in parallel context."""
     new_nodes = {}
     new_pending = []
     new_contracts = {}
+    validation_issues: list[ContractValidationIssue] = []
 
     updated_node = node.model_copy()
     updated_node.status = NodeStatus.DECOMPOSING
@@ -359,7 +397,12 @@ def _process_class_decomposition_parallel(
         child_ids.append(child_id)
         new_pending.append(child_id)
 
+        # Register contracts with validation
         for contract in child_node.contracts_provided:
+            combined_registry = {**contract_registry, **new_contracts}
+            issue = validate_contract_registration(contract, combined_registry)
+            if issue:
+                validation_issues.append(issue)
             new_contracts[contract.name] = contract
 
     updated_node.children_ids = child_ids
@@ -370,6 +413,7 @@ def _process_class_decomposition_parallel(
         "nodes": new_nodes,
         "contract_registry": new_contracts,
         "current_depth": current_depth + 1,
+        "validation_issues": validation_issues,
     }
 
 
@@ -377,6 +421,7 @@ def _process_method_decomposition_parallel(
     node: CodeNode,
     response: DecomposeMethodOutput,
     current_depth: int,
+    contract_registry: dict[str, Contract],
 ) -> dict:
     """Process METHOD decomposition response in parallel context."""
     new_nodes = {}
@@ -385,6 +430,13 @@ def _process_method_decomposition_parallel(
 
     if response.is_terminal:
         # This method is small enough - emit directly
+        # Resolve contracts for the prompt
+        resolved_contracts = [
+            contract_registry[name]
+            for name in node.contracts_required
+            if name in contract_registry
+        ]
+
         updated_node = node.model_copy()
         updated_node.status = NodeStatus.COMPLETE
         updated_node.lask_prompt = LaskPrompt(
@@ -394,6 +446,7 @@ def _process_method_decomposition_parallel(
                 LaskDirective(directive_type="context", value=f)
                 for f in node.context_files
             ],
+            resolved_contracts=resolved_contracts,
         )
         new_nodes[node.node_id] = updated_node
         new_prompts.append(updated_node.lask_prompt)
@@ -402,6 +455,7 @@ def _process_method_decomposition_parallel(
         return {
             "nodes": new_nodes,
             "lask_prompts": new_prompts,
+            "validation_issues": [],
         }
 
     # Decompose into blocks
@@ -430,6 +484,7 @@ def _process_method_decomposition_parallel(
     return {
         "nodes": new_nodes,
         "current_depth": current_depth + 1,
+        "validation_issues": [],
     }
 
 
@@ -451,6 +506,13 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
         HumanMessage(content="\n".join(context_parts)),
     ])
 
+    # Resolve contracts for the prompt
+    resolved_contracts = [
+        contract_registry[name]
+        for name in node.contracts_required
+        if name in contract_registry
+    ]
+
     # Build LASK prompt
     directives = [
         LaskDirective(directive_type="context", value=f)
@@ -466,6 +528,7 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
         # Include MODIFY metadata if provided (empty string becomes None)
         insertion_point=response.insertion_point if response.insertion_point else None,
         replaces=response.replaces if response.replaces else None,
+        resolved_contracts=resolved_contracts,
     )
 
     updated_node = node.model_copy()
@@ -596,11 +659,23 @@ def collector_node(state: ParallelImplementState) -> dict:
     1. Group prompts by file_path
     2. Order prompts within each file by tree structure
     3. Generate MODIFY manifests for MODIFY operations
+    4. Run final contract validation
     """
     nodes = state.get("nodes", {})
     root_node_ids = state.get("root_node_ids", [])
     target_files = state.get("target_files", [])
     plan_summary = state.get("plan_summary", "")
+    contract_registry = state.get("contract_registry", {})
+
+    # Collect accumulated validation issues from parallel workers
+    accumulated_issues = state.get("validation_issues", []) or []
+
+    # Run final validation with complete registry
+    final_issues = validate_all_dependencies_satisfied(nodes, contract_registry)
+    final_issues.extend(detect_circular_dependencies(nodes, contract_registry))
+
+    # Combine all validation issues
+    all_issues = list(accumulated_issues) + final_issues
 
     # Build file path to root node mapping
     file_mapping = _build_file_to_root_mapping(root_node_ids, nodes, target_files)
@@ -632,12 +707,13 @@ def collector_node(state: ParallelImplementState) -> dict:
             modify_manifest=modify_manifest,
         ))
 
-    # Create the grouped output
+    # Create the grouped output with validation issues
     grouped_output = GroupedOutput(
         plan_summary=plan_summary,
         files=grouped_files,
         total_prompts=total_prompts,
         has_modify_operations=has_modify,
+        validation_issues=all_issues,
     )
 
     return {"grouped_output": grouped_output}
