@@ -25,9 +25,16 @@ Given a file intent and context, break it down into:
 - Import/using statements (as a single block)
 - Module-level constants or configuration
 
+CONTRACT OBLIGATIONS:
+If this file has "Contracts this node MUST provide" listed in the context,
+you MUST distribute these obligations among the child components. Each obligated
+contract should be assigned to exactly one child component in its contracts_provided.
+The child will then be responsible for implementing that contract.
+
 For each component, provide:
 1. A clear intent (what it should accomplish)
 2. Contracts it exposes (public interfaces other components can use)
+   - Include any obligated contracts from the parent that this component fulfills
 3. Dependencies on other components (contract names it needs)
 4. Context files it should reference (@context directive)
 
@@ -44,9 +51,15 @@ Given a class intent, its contracts (what it must expose), and dependencies:
 - Each method/property gets its own intent
 - Constructors are methods with special handling
 
+CONTRACT OBLIGATIONS:
+If this class has "Contracts this node MUST provide" listed in the context,
+you are REQUIRED to ensure those contracts are fulfilled. Each obligated contract
+must be assigned to exactly one child member. The child's contracts_provided
+should include the obligated contract so it knows what signature to implement.
+
 For each member, provide:
 1. Intent (what it should do)
-2. Signature (for the contract registry)
+2. Signature (for the contract registry) - MUST match obligated contract signatures if assigned
 3. Dependencies on other members or external contracts
 4. Whether it's likely ≤10 lines (terminal) or needs further decomposition
 
@@ -66,6 +79,11 @@ Given a method intent and signature:
   - Error handling
   - Return/cleanup
 
+CONTRACT OBLIGATIONS:
+If this method has "Contracts this node MUST provide" listed in the context,
+the method implementation MUST match the contract signature exactly. When marking
+as terminal, ensure the terminal_intent describes implementing that exact signature.
+
 Each block should be a single "thought" - one idea that makes sense on its own.
 
 For terminal blocks, describe exactly what the LASK prompt should request.
@@ -80,12 +98,14 @@ Given:
 - Intent: what this block should accomplish
 - Context: contracts it depends on, files for @context
 - Parent structure: where this fits in the larger code
+- Contract obligations: signatures this block MUST implement (if any)
 
 Create a LASK prompt description that is:
 1. Clear and specific about what code to generate
 2. References dependencies via @context directives where helpful
 3. Fits within ~10 lines of generated code
 4. Self-contained enough that LASK can generate it without seeing sibling blocks
+5. If contract obligations are provided, the intent MUST describe implementing those exact signatures
 
 You are NOT generating code. You are describing what code should be generated.
 

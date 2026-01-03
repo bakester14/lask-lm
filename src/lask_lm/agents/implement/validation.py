@@ -24,8 +24,9 @@ def validate_contract_registration(
     """
     Validate a single contract registration.
 
-    Checks if a contract with the same name already exists but has a
-    different signature, which indicates a conflict.
+    Checks for two types of conflicts:
+    1. Same name with different signature (indicates interface mismatch)
+    2. Same name from different provider nodes (indicates duplicate implementation)
 
     Args:
         new_contract: The contract being registered
@@ -36,6 +37,8 @@ def validate_contract_registration(
     """
     if new_contract.name in existing_registry:
         existing = existing_registry[new_contract.name]
+
+        # Check for signature mismatch (most serious)
         if existing.signature != new_contract.signature:
             return ContractValidationIssue(
                 severity=ValidationSeverity.WARNING,
@@ -43,7 +46,22 @@ def validate_contract_registration(
                 message=f"Contract '{new_contract.name}' registered with conflicting signatures: "
                         f"'{existing.signature}' vs '{new_contract.signature}'",
                 contract_name=new_contract.name,
+                node_id=new_contract.provider_node_id,
             )
+
+        # Check for duplicate provider (same contract from different nodes)
+        if (existing.provider_node_id is not None
+            and new_contract.provider_node_id is not None
+            and existing.provider_node_id != new_contract.provider_node_id):
+            return ContractValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="DUPLICATE_PROVIDER",
+                message=f"Contract '{new_contract.name}' already provided by node '{existing.provider_node_id}', "
+                        f"cannot be provided again by node '{new_contract.provider_node_id}'",
+                contract_name=new_contract.name,
+                node_id=new_contract.provider_node_id,
+            )
+
     return None
 
 

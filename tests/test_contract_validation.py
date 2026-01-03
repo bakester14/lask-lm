@@ -33,7 +33,7 @@ class TestValidateContractRegistration:
         assert issue is None
 
     def test_no_issue_for_same_signature(self):
-        """No issue when duplicate has the same signature."""
+        """No issue when duplicate has the same signature without provider_node_id."""
         existing = Contract(
             name="IService.Method",
             signature="void Method()",
@@ -64,6 +64,101 @@ class TestValidateContractRegistration:
         assert issue.severity == ValidationSeverity.WARNING
         assert issue.code == "DUPLICATE_CONTRACT_NAME"
         assert issue.contract_name == "IService.Method"
+
+    def test_error_for_duplicate_provider(self):
+        """Error when different nodes provide the same contract."""
+        existing = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="First registration",
+            provider_node_id="node_a",
+        )
+        new = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="Second registration",
+            provider_node_id="node_b",
+        )
+        issue = validate_contract_registration(new, {"IService.Method": existing})
+        assert issue is not None
+        assert issue.severity == ValidationSeverity.ERROR
+        assert issue.code == "DUPLICATE_PROVIDER"
+        assert issue.contract_name == "IService.Method"
+        assert issue.node_id == "node_b"
+        assert "node_a" in issue.message
+        assert "node_b" in issue.message
+
+    def test_no_issue_for_same_provider(self):
+        """No issue when the same node re-registers a contract."""
+        existing = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="First registration",
+            provider_node_id="node_a",
+        )
+        new = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="Updated registration",
+            provider_node_id="node_a",
+        )
+        issue = validate_contract_registration(new, {"IService.Method": existing})
+        assert issue is None
+
+    def test_no_duplicate_check_when_existing_has_no_provider(self):
+        """No duplicate provider error when existing contract has no provider_node_id."""
+        existing = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="External contract",
+            # No provider_node_id (e.g., external contract)
+        )
+        new = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="Internal implementation",
+            provider_node_id="node_a",
+        )
+        issue = validate_contract_registration(new, {"IService.Method": existing})
+        # Should be allowed - external contracts can be overridden
+        assert issue is None
+
+    def test_no_duplicate_check_when_new_has_no_provider(self):
+        """No duplicate provider error when new contract has no provider_node_id."""
+        existing = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="First implementation",
+            provider_node_id="node_a",
+        )
+        new = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="Re-registration without provider",
+            # No provider_node_id
+        )
+        issue = validate_contract_registration(new, {"IService.Method": existing})
+        # Should be allowed when new contract doesn't claim a provider
+        assert issue is None
+
+    def test_signature_mismatch_takes_precedence(self):
+        """Signature mismatch is reported even if providers differ."""
+        existing = Contract(
+            name="IService.Method",
+            signature="void Method()",
+            description="First registration",
+            provider_node_id="node_a",
+        )
+        new = Contract(
+            name="IService.Method",
+            signature="int Method(string)",  # Different signature
+            description="Second registration",
+            provider_node_id="node_b",
+        )
+        issue = validate_contract_registration(new, {"IService.Method": existing})
+        assert issue is not None
+        # Signature mismatch is checked first
+        assert issue.code == "DUPLICATE_CONTRACT_NAME"
 
 
 class TestValidateContractLookup:

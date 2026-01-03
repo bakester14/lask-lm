@@ -14,7 +14,7 @@
 
 ### Test Coverage
 
-- 65 unit tests across 4 test modules
+- 70 unit tests across 4 test modules
 - E2E test demonstrating streaming and tree inspection
 
 ---
@@ -23,21 +23,17 @@
 
 Issues identified during architecture review:
 
-### 1. Duplicate Contract Implementations
+### 1. Duplicate Contract Implementations ✅ FIXED
 
 **Problem:** Two nodes can provide the same contract with the same signature - not detected.
 
-**Current behavior:** `merge_dicts` overwrites, second registration wins silently.
+**Solution:** Added `provider_node_id` field to `Contract` model. Updated `validate_contract_registration` to detect when different nodes provide the same contract (ERROR severity). Same signature from same node is allowed.
 
-**Fix:** Track provider node ID with each contract, error if different nodes provide the same contract.
-
-### 2. Missing Obligation Tracking
+### 2. Missing Obligation Tracking ✅ FIXED
 
 **Problem:** Child nodes don't know what contracts they're obligated to provide.
 
-**Current behavior:** Parent decomposition declares `contracts_provided` for children, but child decomposition prompts don't receive this information.
-
-**Fix:** Pass `contracts_provided` to decomposition prompts so LLM knows what must be fulfilled.
+**Solution:** Updated all decomposition prompts (FILE, CLASS, METHOD, BLOCK) to include CONTRACT OBLIGATIONS section. Prompts now explain that obligated contracts must be distributed to children and implemented exactly.
 
 ### 3. No Contract Fulfillment Validation
 
@@ -81,14 +77,15 @@ From the original implementation plan:
 
 ### Short-Term (Fixes to Current System)
 
-1. **Pass contracts_provided to decomposition prompts**
-   - Modify `DECOMPOSE_CLASS_PROMPT`, `DECOMPOSE_METHOD_PROMPT`
-   - Include list of contracts this node must provide
+1. **Pass contracts_provided to decomposition prompts** ✅ DONE
+   - Modified `DECOMPOSE_FILE_PROMPT`, `DECOMPOSE_CLASS_PROMPT`, `DECOMPOSE_METHOD_PROMPT`, `TERMINAL_BLOCK_PROMPT`
+   - Each prompt now has a CONTRACT OBLIGATIONS section explaining requirements
    - Effort: Small
 
-2. **Detect duplicate providers**
-   - Change `contract_registry` to track `(Contract, provider_node_id)`
-   - Add validation in `validate_contract_registration`
+2. **Detect duplicate providers** ✅ DONE
+   - Added `provider_node_id` field to `Contract` model
+   - Updated `validate_contract_registration` to detect different nodes providing same contract
+   - Added 5 new unit tests for duplicate provider detection
    - Effort: Small
 
 3. **Validate contract fulfillment**

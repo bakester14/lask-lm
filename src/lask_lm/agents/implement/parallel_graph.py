@@ -104,11 +104,13 @@ def router_node(state: ParallelImplementState | ImplementState) -> dict:
         external_contracts = state.get("external_contracts", [])
 
     # Pre-register external contracts (from files not being processed)
+    # External contracts don't have a provider_node_id since they come from outside
     for contract in external_contracts:
         contract_registry[contract.name] = contract
 
     # Pre-register all file-level contracts before creating nodes
     # This ensures inter-file dependencies are available from the start
+    # Note: These will be updated with proper provider_node_id when the file nodes are created
     for file_target in target_files:
         for contract in file_target.contracts_provided:
             contract_registry[contract.name] = contract
@@ -333,6 +335,7 @@ def _process_file_decomposition_parallel(
                     signature=c.signature,
                     description=c.description,
                     context_files=child_context_files,
+                    provider_node_id=child_id,
                 )
                 for c in comp.contracts_provided
             ],
@@ -407,6 +410,7 @@ def _process_class_decomposition_parallel(
                     signature=c.signature,
                     description=c.description,
                     context_files=child_context_files,
+                    provider_node_id=child_id,
                 )
                 for c in comp.contracts_provided
             ],

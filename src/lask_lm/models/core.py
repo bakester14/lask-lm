@@ -64,6 +64,10 @@ class Contract(BaseModel):
         default_factory=list,
         description="Files that should be referenced via @context directive"
     )
+    provider_node_id: str | None = Field(
+        default=None,
+        description="ID of the node that provides this contract (for duplicate detection)"
+    )
 
 
 class LaskDirective(BaseModel):
