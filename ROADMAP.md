@@ -19,37 +19,48 @@
 
 ---
 
-## Known Gaps
+## Completed Work
 
-Issues identified during architecture review:
+### Duplicate Contract Detection
+- Added `provider_node_id` field to `Contract` model
+- `validate_contract_registration` detects when different nodes provide the same contract (ERROR severity)
+- 5 unit tests
 
-### 1. Duplicate Contract Implementations ✅ FIXED
+### Obligation Tracking
+- All decomposition prompts (FILE, CLASS, METHOD, BLOCK) include CONTRACT OBLIGATIONS section
+- Prompts explain that obligated contracts must be distributed to children and implemented exactly
 
-**Problem:** Two nodes can provide the same contract with the same signature - not detected.
+### Contract Fulfillment Validation
+- `validate_contract_fulfillment()` checks terminal prompt `intent` references contract names
+- Uses ERROR severity to block decomposition if contracts not referenced
+- 7 unit tests
 
-**Solution:** Added `provider_node_id` field to `Contract` model. Updated `validate_contract_registration` to detect when different nodes provide the same contract (ERROR severity). Same signature from same node is allowed.
+### Cross-File Contract Tracking
+- `external_contracts` input for contracts from files outside decomposition
+- Global `contract_registry` shared across all file nodes
+- `validate_all_dependencies_satisfied` and `detect_circular_dependencies` work across file boundaries
 
-### 2. Missing Obligation Tracking ✅ FIXED
+### Validation Strictness
+- Contract validation failures block decomposition
+- Catches issues early rather than trusting LLM consistency
 
-**Problem:** Child nodes don't know what contracts they're obligated to provide.
+---
 
-**Solution:** Updated all decomposition prompts (FILE, CLASS, METHOD, BLOCK) to include CONTRACT OBLIGATIONS section. Prompts now explain that obligated contracts must be distributed to children and implemented exactly.
+## Open Issues
 
-### 3. No Contract Fulfillment Validation ✅ FIXED
-
-**Problem:** No validation that terminal prompt intent actually implements the contract signature.
-
-**Solution:** Added `validate_contract_fulfillment()` function that checks if terminal prompt `intent` text references the contract names it's obligated to provide. Uses simple name matching (full name or method part, case-insensitive). Returns ERROR severity to block decomposition if contracts are not referenced.
-
-### 4. Intra-File Dependencies
+### Intra-File Dependencies
 
 **Problem:** File header (using statements) is processed early but needs to know what types are used in methods below.
 
 **Current behavior:** LLM at FILE level must anticipate all needed imports.
 
-**Fix:** Two-pass approach (decompose first, emit prompts second), or defer file header to last.
+**Design decision:** LASK-LM does not write any code, including imports.
+- Inter-file dependencies: Use `@context` directive to reference other files
+- Intra-file dependencies: Use `@layer` directive for ordering (layers processed ascending, starting with `@layer(0)` which is the default)
 
-### 5. MODIFY Operations Are Blind
+**Fix:** Two-pass decomposition (see Future Enhancements).
+
+### MODIFY Operations Are Blind
 
 **Problem:** For MODIFY operations, file contents are not read or passed to the LLM.
 
@@ -59,102 +70,34 @@ Issues identified during architecture review:
 
 ---
 
-## Planned: Phase 6 - Full MODIFY Support
+## Phase 6 - Full MODIFY Support
 
-From the original implementation plan:
-
-- [ ] Parse existing files with AST
-- [ ] Pass current structure to decomposition LLM
-- [ ] Smart SKIP for unchanged nodes
-- [ ] Accurate `line_range` and `ast_path` in LocationMetadata
-- [ ] REPLACE/DELETE operations with precise targeting
-
----
-
-## Proposed Enhancements
-
-### Short-Term (Fixes to Current System)
-
-1. **Pass contracts_provided to decomposition prompts** ✅ DONE
-   - Modified `DECOMPOSE_FILE_PROMPT`, `DECOMPOSE_CLASS_PROMPT`, `DECOMPOSE_METHOD_PROMPT`, `TERMINAL_BLOCK_PROMPT`
-   - Each prompt now has a CONTRACT OBLIGATIONS section explaining requirements
-   - Effort: Small
-
-2. **Detect duplicate providers** ✅ DONE
-   - Added `provider_node_id` field to `Contract` model
-   - Updated `validate_contract_registration` to detect different nodes providing same contract
-   - Added 5 new unit tests for duplicate provider detection
-   - Effort: Small
-
-3. **Validate contract fulfillment** ✅ DONE
-   - Added `validate_contract_fulfillment()` to `validation.py`
-   - Checks terminal prompts reference contract names (full or method part)
-   - Uses ERROR severity to block decomposition
-   - 7 new unit tests added
-   - Effort: Small
-
-### Medium-Term (Phase 6)
-
-4. **File reading for MODIFY**
-   - Add file system access to decomposition
-   - Parse files to extract structure
-   - Pass structure summary to LLM
-   - Effort: Medium-Large
-
-5. **AST-based location targeting**
-   - Use tree-sitter or similar for multi-language AST
-   - Generate accurate `line_range` and `ast_path`
-   - Effort: Medium
-
-6. **Smart SKIP for unchanged code**
-   - Mark sections that don't need modification
-   - Reduce prompt generation for stable code
-   - Effort: Medium
-
-### Longer-Term (Enhancements)
-
-7. **Two-pass decomposition**
-   - Pass 1: Build full tree structure
-   - Pass 2: Emit prompts with full tree context
-   - Fixes ordering issues (imports, forward references)
-   - Effort: Large (architectural change)
-
-8. **Cross-file contract tracking**
-   - Contracts span multiple files
-   - Validate dependencies across file boundaries
-   - Effort: Medium
-
-9. **Incremental decomposition**
-   - Cache previous decomposition
-   - Only re-decompose changed portions
-   - Effort: Large
-
----
-
-## Design Decisions (Resolved)
-
-### 1. Import Handling
-
-**Decision:** LASK-LM does not write any code, including imports.
-
-- **Inter-file dependencies:** Use `@context` directive to reference other files
-- **Intra-file dependencies:** Use `@layer` directive for ordering (layers processed ascending, starting with `@layer(0)` which is the default)
-
-### 2. File Reading Location
-
-**Decision:** LASK-LM reads files via configurable tool call.
-
+**Design decision:** LASK-LM reads files via configurable tool call.
 - LASK-LM may not execute on the same machine as the target files
 - File access happens through a configurable tool call interface (not direct disk reads)
 - Enables remote execution scenarios and flexible deployment
 
-### 3. Validation Strictness
+### Tasks
 
-**Decision:** Strict validation with errors.
+- [ ] **File reading for MODIFY** - Add configurable tool call to read existing files, pass structure summary to LLM
+- [ ] **AST-based location targeting** - Use tree-sitter for multi-language AST, generate accurate `line_range` and `ast_path`
+- [ ] **Smart SKIP for unchanged code** - Mark sections that don't need modification, reduce prompt generation for stable code
+- [ ] **REPLACE/DELETE operations** - Precise targeting with location metadata
 
-- Contract validation failures block decomposition
-- Ensures contracts are properly fulfilled before proceeding
-- Catches issues early rather than trusting LLM consistency
+---
+
+## Future Enhancements
+
+### Two-Pass Decomposition
+- Pass 1: Build full tree structure
+- Pass 2: Emit prompts with full tree context
+- Fixes intra-file dependency ordering (imports, forward references)
+- Effort: Large (architectural change)
+
+### Incremental Decomposition
+- Cache previous decomposition
+- Only re-decompose changed portions
+- Effort: Large
 
 ---
 
