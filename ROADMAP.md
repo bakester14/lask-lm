@@ -35,13 +35,11 @@ Issues identified during architecture review:
 
 **Solution:** Updated all decomposition prompts (FILE, CLASS, METHOD, BLOCK) to include CONTRACT OBLIGATIONS section. Prompts now explain that obligated contracts must be distributed to children and implemented exactly.
 
-### 3. No Contract Fulfillment Validation
+### 3. No Contract Fulfillment Validation ✅ FIXED
 
 **Problem:** No validation that terminal prompt intent actually implements the contract signature.
 
-**Current behavior:** System trusts that if a node has `contracts_provided`, the generated code will match.
-
-**Fix:** Could add signature keywords check, or rely on LASK-level validation.
+**Solution:** Added `validate_contract_fulfillment()` function that checks if terminal prompt `intent` text references the contract names it's obligated to provide. Uses simple name matching (full name or method part, case-insensitive). Returns ERROR severity to block decomposition if contracts are not referenced.
 
 ### 4. Intra-File Dependencies
 
@@ -88,10 +86,12 @@ From the original implementation plan:
    - Added 5 new unit tests for duplicate provider detection
    - Effort: Small
 
-3. **Validate contract fulfillment**
-   - Check that terminal prompts reference their contract signatures
-   - Could be warning-level, not blocking
-   - Effort: Medium
+3. **Validate contract fulfillment** ✅ DONE
+   - Added `validate_contract_fulfillment()` to `validation.py`
+   - Checks terminal prompts reference contract names (full or method part)
+   - Uses ERROR severity to block decomposition
+   - 7 new unit tests added
+   - Effort: Small
 
 ### Medium-Term (Phase 6)
 

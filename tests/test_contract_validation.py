@@ -16,6 +16,7 @@ from lask_lm.agents.implement.validation import (
     validate_contract_lookup,
     detect_circular_dependencies,
     validate_all_dependencies_satisfied,
+    validate_contract_fulfillment,
 )
 
 
@@ -411,3 +412,122 @@ class TestLaskPromptContractIntegration:
         )
         comment = prompt.to_comment()
         assert "[requires: A.Method: void A(), B.Method: int B()]" in comment
+
+
+class TestValidateContractFulfillment:
+    """Tests for contract fulfillment validation at terminal prompts."""
+
+    def test_no_issue_when_intent_references_full_name(self):
+        """No issue when intent references the full contract name."""
+        contracts = [
+            Contract(
+                name="IUserRepository.GetUserAsync",
+                signature="Task<User> GetUserAsync(int id)",
+                description="Get user by ID",
+            ),
+        ]
+        issues = validate_contract_fulfillment(
+            prompt_intent="Implement IUserRepository.GetUserAsync to fetch user from database",
+            contracts_provided=contracts,
+            node_id="test_node",
+        )
+        assert len(issues) == 0
+
+    def test_no_issue_when_intent_references_method_part(self):
+        """No issue when intent references just the method part of the name."""
+        contracts = [
+            Contract(
+                name="IUserRepository.GetUserAsync",
+                signature="Task<User> GetUserAsync(int id)",
+                description="Get user by ID",
+            ),
+        ]
+        issues = validate_contract_fulfillment(
+            prompt_intent="Implement GetUserAsync to fetch user from database",
+            contracts_provided=contracts,
+            node_id="test_node",
+        )
+        assert len(issues) == 0
+
+    def test_case_insensitive_matching(self):
+        """Matching is case-insensitive."""
+        contracts = [
+            Contract(
+                name="IUserRepository.GetUserAsync",
+                signature="Task<User> GetUserAsync(int id)",
+                description="Get user by ID",
+            ),
+        ]
+        issues = validate_contract_fulfillment(
+            prompt_intent="implement getuserasync to fetch user",
+            contracts_provided=contracts,
+            node_id="test_node",
+        )
+        assert len(issues) == 0
+
+    def test_error_when_contract_not_referenced(self):
+        """Error when intent doesn't reference the contract."""
+        contracts = [
+            Contract(
+                name="IUserRepository.GetUserAsync",
+                signature="Task<User> GetUserAsync(int id)",
+                description="Get user by ID",
+            ),
+        ]
+        issues = validate_contract_fulfillment(
+            prompt_intent="Create a helper method to validate input",
+            contracts_provided=contracts,
+            node_id="test_node",
+        )
+        assert len(issues) == 1
+        assert issues[0].severity == ValidationSeverity.ERROR
+        assert issues[0].code == "CONTRACT_NOT_REFERENCED"
+        assert issues[0].node_id == "test_node"
+        assert issues[0].contract_name == "IUserRepository.GetUserAsync"
+
+    def test_multiple_contracts_one_missing(self):
+        """Error only for the contract not referenced."""
+        contracts = [
+            Contract(
+                name="IUserRepository.GetUserAsync",
+                signature="Task<User> GetUserAsync(int id)",
+                description="Get user by ID",
+            ),
+            Contract(
+                name="IUserRepository.CreateUser",
+                signature="Task CreateUser(User user)",
+                description="Create new user",
+            ),
+        ]
+        issues = validate_contract_fulfillment(
+            prompt_intent="Implement GetUserAsync to fetch from database",
+            contracts_provided=contracts,
+            node_id="test_node",
+        )
+        assert len(issues) == 1
+        assert issues[0].contract_name == "IUserRepository.CreateUser"
+
+    def test_no_issues_for_empty_contracts(self):
+        """No issues when there are no contracts to fulfill."""
+        issues = validate_contract_fulfillment(
+            prompt_intent="Create a simple helper method",
+            contracts_provided=[],
+            node_id="test_node",
+        )
+        assert len(issues) == 0
+
+    def test_contract_name_without_dot(self):
+        """Works for contract names without dots."""
+        contracts = [
+            Contract(
+                name="ValidateUser",
+                signature="bool ValidateUser(User user)",
+                description="Validate user",
+            ),
+        ]
+        issues = validate_contract_fulfillment(
+            prompt_intent="Implement ValidateUser to check user fields",
+            contracts_provided=contracts,
+            node_id="test_node",
+        )
+        assert len(issues) == 0

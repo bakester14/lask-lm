@@ -37,6 +37,7 @@ from .validation import (
     validate_contract_lookup,
     validate_all_dependencies_satisfied,
     detect_circular_dependencies,
+    validate_contract_fulfillment,
 )
 from .prompts import SYSTEM_PROMPT_BASE, DECOMPOSITION_PROMPTS
 from .schemas import (
@@ -463,9 +464,7 @@ def _process_method_decomposition_parallel(
             if name in contract_registry
         ]
 
-        updated_node = node.model_copy()
-        updated_node.status = NodeStatus.COMPLETE
-        updated_node.lask_prompt = LaskPrompt(
+        lask_prompt = LaskPrompt(
             file_path=node.context_files[0] if node.context_files else "unknown",
             intent=response.terminal_intent or node.intent,
             directives=[
@@ -474,14 +473,25 @@ def _process_method_decomposition_parallel(
             ],
             resolved_contracts=resolved_contracts,
         )
+
+        # Validate that prompt references contracts it must implement
+        validation_issues = validate_contract_fulfillment(
+            lask_prompt.intent,
+            node.contracts_provided,
+            node.node_id,
+        )
+
+        updated_node = node.model_copy()
+        updated_node.status = NodeStatus.COMPLETE
+        updated_node.lask_prompt = lask_prompt
         new_nodes[node.node_id] = updated_node
-        new_prompts.append(updated_node.lask_prompt)
+        new_prompts.append(lask_prompt)
 
         # Don't return pending_node_ids - aggregator rebuilds from node statuses
         return {
             "nodes": new_nodes,
             "lask_prompts": new_prompts,
-            "validation_issues": [],
+            "validation_issues": validation_issues,
         }
 
     # Decompose into blocks
@@ -557,6 +567,13 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
         resolved_contracts=resolved_contracts,
     )
 
+    # Validate that prompt references contracts it must implement
+    validation_issues = validate_contract_fulfillment(
+        lask_prompt.intent,
+        node.contracts_provided,
+        node.node_id,
+    )
+
     updated_node = node.model_copy()
     updated_node.status = NodeStatus.COMPLETE
     updated_node.lask_prompt = lask_prompt
@@ -565,6 +582,7 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
     return {
         "nodes": {node.node_id: updated_node},
         "lask_prompts": [lask_prompt],
+        "validation_issues": validation_issues,
     }
 
 

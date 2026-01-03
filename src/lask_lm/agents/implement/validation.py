@@ -198,3 +198,48 @@ def validate_all_dependencies_satisfied(
                 ))
 
     return issues
+
+
+def validate_contract_fulfillment(
+    prompt_intent: str,
+    contracts_provided: list[Contract],
+    node_id: str,
+) -> list[ContractValidationIssue]:
+    """
+    Validate that a terminal prompt references the contracts it must implement.
+
+    This checks that the prompt's intent text mentions the contract names
+    that the node is obligated to provide. Uses simple name matching.
+
+    Args:
+        prompt_intent: The intent text from the LaskPrompt
+        contracts_provided: Contracts this node is obligated to implement
+        node_id: ID of the node for error reporting
+
+    Returns:
+        List of validation issues for unreferenced contracts
+    """
+    issues = []
+    intent_lower = prompt_intent.lower()
+
+    for contract in contracts_provided:
+        # Check for full contract name
+        if contract.name.lower() in intent_lower:
+            continue
+
+        # Check for method part (after last dot)
+        method_part = contract.name.split(".")[-1]
+        if method_part.lower() in intent_lower:
+            continue
+
+        # Contract not referenced in intent
+        issues.append(ContractValidationIssue(
+            severity=ValidationSeverity.ERROR,
+            code="CONTRACT_NOT_REFERENCED",
+            message=f"Terminal prompt for node '{node_id}' does not reference "
+                    f"contract '{contract.name}' which it is obligated to implement",
+            node_id=node_id,
+            contract_name=contract.name,
+        ))
+
+    return issues
