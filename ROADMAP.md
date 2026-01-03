@@ -131,28 +131,30 @@ From the original implementation plan:
 
 ---
 
-## Open Design Questions
+## Design Decisions (Resolved)
 
 ### 1. Import Handling
 
-Should LASK-LM generate accurate imports, or should LASK aggregate them?
+**Decision:** LASK-LM does not write any code, including imports.
 
-- **LASK-LM handles it:** Requires two-pass or deferred file header
-- **LASK handles it:** Current design works, LASK infers imports from generated code
+- **Inter-file dependencies:** Use `@context` directive to reference other files
+- **Intra-file dependencies:** Use `@layer` directive for ordering (layers processed ascending, starting with `@layer(0)` which is the default)
 
 ### 2. File Reading Location
 
-For MODIFY operations, where should file reading happen?
+**Decision:** LASK-LM reads files via configurable tool call.
 
-- **LASK-LM:** More accurate decomposition, requires file system access
-- **LASK:** Use @context directives, simpler decomposition layer
+- LASK-LM may not execute on the same machine as the target files
+- File access happens through a configurable tool call interface (not direct disk reads)
+- Enables remote execution scenarios and flexible deployment
 
 ### 3. Validation Strictness
 
-How strict should contract validation be?
+**Decision:** Strict validation with errors.
 
-- **Warnings only (current):** Flexible, trusts LLM consistency
-- **Errors:** Strict enforcement, may block valid decompositions
+- Contract validation failures block decomposition
+- Ensures contracts are properly fulfilled before proceeding
+- Catches issues early rather than trusting LLM consistency
 
 ---
 
