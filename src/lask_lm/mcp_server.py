@@ -57,6 +57,10 @@ def list_tools() -> dict:
                                         "type": "array",
                                         "items": contract_schema,
                                         "description": "Contracts this file is obligated to implement"
+                                    },
+                                    "existing_content": {
+                                        "type": "string",
+                                        "description": "For MODIFY operations: the current file content"
                                     }
                                 },
                                 "required": ["path", "operation", "description"]
@@ -102,6 +106,7 @@ def decompose_to_lask(args: dict) -> dict:
                 operation=FileOperation(f.get("operation", "create")),
                 description=f["description"],
                 language=f.get("language", "csharp"),
+                existing_content=f.get("existing_content"),
                 contracts_provided=[
                     _parse_contract(c) for c in f.get("contracts_provided", [])
                 ],

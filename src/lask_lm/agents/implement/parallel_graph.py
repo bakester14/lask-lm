@@ -126,6 +126,7 @@ def router_node(state: ParallelImplementState | ImplementState) -> dict:
             status=NodeStatus.PENDING,
             context_files=[file_target.path],
             contracts_provided=file_target.contracts_provided,
+            existing_content=file_target.existing_content,
         )
         nodes[node_id] = node
         root_ids.append(node_id)
@@ -252,6 +253,12 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
 
     if node.context_files:
         context_parts.append(f"Context files: {', '.join(node.context_files)}")
+
+    # For MODIFY operations, include existing file content
+    if node.existing_content:
+        context_parts.append("\n--- EXISTING FILE CONTENT (MODIFY operation) ---")
+        context_parts.append(node.existing_content)
+        context_parts.append("--- END EXISTING CONTENT ---\n")
 
     from langchain_core.messages import SystemMessage, HumanMessage
     messages = [

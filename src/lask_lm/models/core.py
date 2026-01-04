@@ -167,6 +167,12 @@ class CodeNode(BaseModel):
         description="The LASK prompt (only for terminal BLOCK nodes)"
     )
 
+    # MODIFY mode: existing file content (only set for FILE nodes with MODIFY operation)
+    existing_content: str | None = Field(
+        default=None,
+        description="For MODIFY FILE nodes: the current file content"
+    )
+
 
 class FileTarget(BaseModel):
     """A file that the Implement agent will create or modify."""

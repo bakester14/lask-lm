@@ -25,6 +25,15 @@ Given a file intent and context, break it down into:
 - Import/using statements (as a single block)
 - Module-level constants or configuration
 
+MODIFY OPERATIONS:
+If existing file content is provided (marked with "EXISTING FILE CONTENT"), you are
+modifying an existing file rather than creating a new one. In this case:
+- Analyze the existing structure before decomposing
+- Identify which components need to be added, modified, or left unchanged
+- For components that don't need changes, you may omit them or mark them for SKIP
+- Focus decomposition on the parts that need modification
+- Preserve existing structure where possible
+
 CONTRACT OBLIGATIONS:
 If this file has "Contracts this node MUST provide" listed in the context,
 you MUST distribute these obligations among the child components. Each obligated

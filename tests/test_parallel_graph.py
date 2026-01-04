@@ -543,5 +543,117 @@ class TestIntegration:
             assert len(result["lask_prompts"]) >= 3
 
 
+class TestModifyWithExistingContent:
+    """Test MODIFY operations with existing_content."""
+
+    def test_router_passes_existing_content_to_node(self):
+        """router_node passes existing_content from FileTarget to CodeNode."""
+        existing_code = """public class OrderService
+{
+    public void ProcessOrder(Order order) { }
+}"""
+        state: ParallelImplementState = {
+            "plan_summary": "Add validation to OrderService",
+            "target_files": [
+                FileTarget(
+                    path="OrderService.cs",
+                    operation=FileOperation.MODIFY,
+                    description="Add validation to ProcessOrder method",
+                    existing_content=existing_code,
+                ),
+            ],
+        }
+
+        result = router_node(state)
+
+        assert len(result["nodes"]) == 1
+        node = list(result["nodes"].values())[0]
+        assert node.existing_content == existing_code
+
+    def test_router_handles_none_existing_content(self):
+        """router_node handles CREATE files without existing_content."""
+        state: ParallelImplementState = {
+            "plan_summary": "Create new service",
+            "target_files": [
+                FileTarget(
+                    path="NewService.cs",
+                    operation=FileOperation.CREATE,
+                    description="A new service",
+                    # No existing_content - should be None
+                ),
+            ],
+        }
+
+        result = router_node(state)
+
+        node = list(result["nodes"].values())[0]
+        assert node.existing_content is None
+
+    @pytest.mark.integration
+    def test_decomposer_receives_existing_content_in_context(self):
+        """parallel_decomposer_node includes existing_content in LLM context."""
+        existing_code = """public class OrderService
+{
+    public void ProcessOrder(Order order) { }
+}"""
+        node = CodeNode(
+            node_id="test_node",
+            node_type=NodeType.FILE,
+            intent="Add validation to ProcessOrder",
+            status=NodeStatus.PENDING,
+            context_files=["OrderService.cs"],
+            existing_content=existing_code,
+        )
+
+        state: SingleNodeState = {
+            "node_id": "test_node",
+            "node": node,
+            "plan_summary": "Add validation",
+            "contract_registry": {},
+            "current_depth": 0,
+            "max_depth": 10,
+        }
+
+        file_response = DecomposeFileOutput(
+            components=[
+                ComponentOutput(
+                    name="ProcessOrderValidation",
+                    component_type="method",
+                    intent="Add validation to ProcessOrder",
+                    contracts_provided=[],
+                    contracts_required=[],
+                    context_files=["OrderService.cs"],
+                    is_terminal=True,
+                )
+            ],
+            file_header_intent="",
+            notes="",
+        )
+
+        captured_messages = []
+
+        def capture_invoke(messages):
+            captured_messages.extend(messages)
+            return file_response
+
+        with patch(
+            "lask_lm.agents.implement.parallel_graph._get_llm"
+        ), patch(
+            "lask_lm.agents.implement.parallel_graph._structured_output"
+        ) as mock_structured:
+            mock_chain = Mock()
+            mock_chain.invoke.side_effect = capture_invoke
+            mock_structured.return_value = mock_chain
+
+            parallel_decomposer_node(state)
+
+            # Verify the existing content was included in the message
+            assert len(captured_messages) == 2  # System + Human
+            human_message = captured_messages[1].content
+            assert "EXISTING FILE CONTENT" in human_message
+            assert "public class OrderService" in human_message
+            assert "ProcessOrder" in human_message
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -14,7 +14,7 @@
 
 ### Test Coverage
 
-- 70 unit tests across 4 test modules
+- 80 unit tests across 4 test modules
 - E2E test demonstrating streaming and tree inspection
 
 ---
@@ -79,7 +79,7 @@
 
 ### Tasks
 
-- [ ] **File reading for MODIFY** - Add configurable tool call to read existing files, pass structure summary to LLM
+- [x] **File reading for MODIFY** - Caller passes `existing_content` for MODIFY files; content included in LLM context
 - [ ] **AST-based location targeting** - Use tree-sitter for multi-language AST, generate accurate `line_range` and `ast_path`
 - [ ] **Smart SKIP for unchanged code** - Mark sections that don't need modification, reduce prompt generation for stable code
 - [ ] **REPLACE/DELETE operations** - Precise targeting with location metadata
@@ -98,6 +98,14 @@
 - Cache previous decomposition
 - Only re-decompose changed portions
 - Effort: Large
+
+### LLM Injection via MCP Sampling
+- **Goal:** Allow callers (e.g., Claude Code) to provide LLM capabilities instead of LASK-LM requiring its own API key
+- **Approach:** Use MCP sampling protocol - server requests completions from client
+- **Blocker:** Claude Code does not currently support MCP sampling (client-side capability)
+- **LangGraph pattern:** Use `Runtime[LaskContext]` with `context_schema` for dependency injection
+- **When available:** Refactor `_get_llm()` to use injected `runtime.context.llm` instead of hardcoded `ChatOpenAI`
+- Effort: Medium (protocol support pending)
 
 ---
 
