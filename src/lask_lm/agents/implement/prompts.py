@@ -30,9 +30,17 @@ If existing file content is provided (marked with "EXISTING FILE CONTENT"), you 
 modifying an existing file rather than creating a new one. In this case:
 - Analyze the existing structure before decomposing
 - Identify which components need to be added, modified, or left unchanged
-- For components that don't need changes, you may omit them or mark them for SKIP
+- For components that don't need changes, set is_unchanged=true - no prompts will be generated
 - Focus decomposition on the parts that need modification
 - Preserve existing structure where possible
+
+SMART SKIP (MODIFY mode only):
+Set is_unchanged=true for components that:
+- Exist in the current file and don't need any modification
+- Are stable, well-tested infrastructure code not affected by the change
+- Have functionality not mentioned in the modification intent
+When in doubt about whether a component needs changes, prefer is_unchanged=true if
+the component's functionality isn't mentioned in the modification intent.
 
 CONTRACT OBLIGATIONS:
 If this file has "Contracts this node MUST provide" listed in the context,
@@ -59,6 +67,12 @@ Given a class intent, its contracts (what it must expose), and dependencies:
 - Break it into methods, properties, fields, and nested types
 - Each method/property gets its own intent
 - Constructors are methods with special handling
+
+SMART SKIP (MODIFY mode only):
+If existing file content is provided and this class exists in it:
+- Set is_unchanged=true for members that don't need modification
+- Only decompose members where the change actually applies
+- Preserve unchanged members by marking them is_unchanged=true
 
 CONTRACT OBLIGATIONS:
 If this class has "Contracts this node MUST provide" listed in the context,
@@ -88,6 +102,11 @@ Given a method intent and signature:
   - Error handling
   - Return/cleanup
 
+SMART SKIP (MODIFY mode only):
+If modifying an existing method, set is_unchanged=true for blocks that:
+- Don't need any modification based on the intent
+- Contain stable logic not affected by the change
+
 CONTRACT OBLIGATIONS:
 If this method has "Contracts this node MUST provide" listed in the context,
 the method implementation MUST match the contract signature exactly. When marking
@@ -116,7 +135,14 @@ Create a LASK prompt description that is:
 4. Self-contained enough that LASK can generate it without seeing sibling blocks
 5. If contract obligations are provided, the intent MUST describe implementing those exact signatures
 
-You are NOT generating code. You are describing what code should be generated.
+DELETE OPERATIONS (MODIFY mode only):
+If the intent indicates code should be REMOVED rather than added or modified:
+- Set is_delete=true
+- Use the 'replaces' field to describe what code section should be deleted
+- The 'intent' should explain WHY the deletion is needed (for documentation)
+- Example: intent="Remove deprecated validation", replaces="the LegacyValidate method"
+
+You are NOT generating code. You are describing what code should be generated (or deleted).
 
 Output format: JSON matching the LaskPromptOutput schema."""
 

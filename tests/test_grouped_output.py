@@ -515,3 +515,219 @@ class TestModels:
         assert output.plan_summary == "Test plan"
         assert len(output.files) == 1
         assert output.total_prompts == 1
+
+
+class TestSkipUnchangedComponents:
+    """Tests for is_unchanged component handling (Smart SKIP)."""
+
+    def test_skip_nodes_excluded_from_prompt_collection(self):
+        """SKIP nodes don't contribute to collected prompts."""
+        prompt = LaskPrompt(file_path="test.cs", intent="Modified method")
+
+        root = CodeNode(
+            node_id="root",
+            node_type=NodeType.FILE,
+            intent="File",
+            context_files=["test.cs"],
+            children_ids=["unchanged", "modified"],
+            status=NodeStatus.DECOMPOSING,
+        )
+        # SKIP node - no prompt
+        unchanged = CodeNode(
+            node_id="unchanged",
+            node_type=NodeType.BLOCK,
+            intent="Unchanged class",
+            parent_id="root",
+            context_files=["test.cs"],
+            status=NodeStatus.SKIP,  # Marked as SKIP
+        )
+        # COMPLETE node - has prompt
+        modified = CodeNode(
+            node_id="modified",
+            node_type=NodeType.BLOCK,
+            intent="Modified method",
+            parent_id="root",
+            context_files=["test.cs"],
+            status=NodeStatus.COMPLETE,
+            lask_prompt=prompt,
+        )
+
+        nodes = {"root": root, "unchanged": unchanged, "modified": modified}
+        collected = []
+
+        _depth_first_collect_prompts("root", nodes, collected)
+
+        # Only the modified node's prompt should be collected
+        assert len(collected) == 1
+        assert collected[0].intent == "Modified method"
+
+    def test_collector_excludes_skip_nodes_from_output(self):
+        """Collector node excludes SKIP nodes from grouped output."""
+        prompt = LaskPrompt(file_path="test.cs", intent="New feature")
+
+        root = CodeNode(
+            node_id="root",
+            node_type=NodeType.FILE,
+            intent="File",
+            context_files=["test.cs"],
+            children_ids=["skip1", "complete1"],
+            status=NodeStatus.DECOMPOSING,
+        )
+        skip1 = CodeNode(
+            node_id="skip1",
+            node_type=NodeType.BLOCK,
+            intent="Unchanged",
+            parent_id="root",
+            context_files=["test.cs"],
+            status=NodeStatus.SKIP,
+        )
+        complete1 = CodeNode(
+            node_id="complete1",
+            node_type=NodeType.BLOCK,
+            intent="New feature",
+            parent_id="root",
+            context_files=["test.cs"],
+            status=NodeStatus.COMPLETE,
+            lask_prompt=prompt,
+        )
+
+        state: ParallelImplementState = {
+            "plan_summary": "MODIFY with SKIP",
+            "nodes": {"root": root, "skip1": skip1, "complete1": complete1},
+            "root_node_ids": ["root"],
+            "target_files": [
+                FileTarget(
+                    path="test.cs",
+                    operation=FileOperation.MODIFY,
+                    description="Test",
+                    existing_content="public class Test {}",
+                ),
+            ],
+            "lask_prompts": [prompt],
+        }
+
+        result = collector_node(state)
+        output = result["grouped_output"]
+
+        # Only 1 prompt (from complete1), skip1 is excluded
+        assert output.total_prompts == 1
+        assert len(output.files[0].prompts) == 1
+        assert output.files[0].prompts[0].intent == "New feature"
+
+
+class TestDeleteOperations:
+    """Tests for DELETE operation support."""
+
+    def test_delete_prompt_creates_delete_operation(self):
+        """Prompt with is_delete=True creates DELETE operation in manifest."""
+        prompts = [
+            LaskPrompt(
+                file_path="test.cs",
+                intent="Remove deprecated validation",
+                replaces="LegacyValidate method",
+                is_delete=True,
+            ),
+            LaskPrompt(
+                file_path="test.cs",
+                intent="Add new validation",
+                insertion_point="after constructor",
+            ),
+        ]
+        file_target = FileTarget(
+            path="test.cs",
+            operation=FileOperation.MODIFY,
+            description="Test file",
+            existing_content="public class Test { void LegacyValidate() {} }",
+        )
+
+        manifest = _build_modify_manifest("test.cs", prompts, file_target)
+
+        assert len(manifest.operations) == 2
+
+        # First operation - DELETE
+        op1 = manifest.operations[0]
+        assert op1.operation_type == OperationType.DELETE
+        assert op1.replaces == "LegacyValidate method"
+
+        # Second operation - INSERT
+        op2 = manifest.operations[1]
+        assert op2.operation_type == OperationType.INSERT
+        assert op2.location.insertion_point == "after constructor"
+
+    def test_delete_to_comment_format(self):
+        """DELETE prompts render as @delete comments."""
+        prompt = LaskPrompt(
+            file_path="test.cs",
+            intent="Remove old code",
+            replaces="the deprecated method",
+            is_delete=True,
+        )
+
+        comment = prompt.to_comment()
+
+        assert "@delete" in comment
+        assert "the deprecated method" in comment
+
+    def test_delete_to_comment_without_replaces(self):
+        """DELETE prompts without replaces use default text."""
+        prompt = LaskPrompt(
+            file_path="test.cs",
+            intent="Remove old code",
+            is_delete=True,
+        )
+
+        comment = prompt.to_comment()
+
+        assert "@delete" in comment
+        assert "target code" in comment
+
+    def test_delete_operation_in_collector_output(self):
+        """DELETE operations appear in collector grouped output."""
+        prompt = LaskPrompt(
+            file_path="test.cs",
+            intent="Remove deprecated code",
+            replaces="old method",
+            is_delete=True,
+        )
+
+        root = CodeNode(
+            node_id="root",
+            node_type=NodeType.FILE,
+            intent="File",
+            context_files=["test.cs"],
+            children_ids=["n1"],
+            status=NodeStatus.DECOMPOSING,
+        )
+        n1 = CodeNode(
+            node_id="n1",
+            node_type=NodeType.BLOCK,
+            intent="Delete block",
+            parent_id="root",
+            context_files=["test.cs"],
+            status=NodeStatus.COMPLETE,
+            lask_prompt=prompt,
+        )
+
+        state: ParallelImplementState = {
+            "plan_summary": "Delete operation test",
+            "nodes": {"root": root, "n1": n1},
+            "root_node_ids": ["root"],
+            "target_files": [
+                FileTarget(
+                    path="test.cs",
+                    operation=FileOperation.MODIFY,
+                    description="Test",
+                    existing_content="public class Test { void OldMethod() {} }",
+                ),
+            ],
+            "lask_prompts": [prompt],
+        }
+
+        result = collector_node(state)
+        output = result["grouped_output"]
+
+        assert output.has_modify_operations is True
+        manifest = output.files[0].modify_manifest
+        assert manifest is not None
+        assert len(manifest.operations) == 1
+        assert manifest.operations[0].operation_type == OperationType.DELETE

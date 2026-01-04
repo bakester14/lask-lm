@@ -101,9 +101,17 @@ class LaskPrompt(BaseModel):
         default_factory=list,
         description="Contracts required by this prompt, resolved from registry"
     )
+    is_delete: bool = Field(
+        default=False,
+        description="True if this is a DELETE operation (removes code, no generation)"
+    )
 
     def to_comment(self, comment_prefix: str = "//") -> str:
         """Render as a LASK-compatible comment."""
+        # Handle DELETE operations specially
+        if self.is_delete:
+            return f"{comment_prefix} @delete {self.replaces or 'target code'}"
+
         parts = []
 
         # Add directives first

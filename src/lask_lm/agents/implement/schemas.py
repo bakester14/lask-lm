@@ -25,6 +25,7 @@ class ComponentOutput(BaseModel):
     contracts_required: list[str] = Field(description="Contract names this component depends on (empty list if none)")
     context_files: list[str] = Field(description="Files to reference via @context (empty list if none)")
     is_terminal: bool = Field(description="True if this is ≤10 lines and should become a LASK prompt")
+    is_unchanged: bool = Field(default=False, description="True if this component needs no modification (MODIFY mode only)")
 
 
 class DecomposeFileOutput(BaseModel):
@@ -65,3 +66,4 @@ class LaskPromptOutput(BaseModel):
     # Note: defaults added for backwards compatibility with tests
     insertion_point: str = Field(default="", description="For MODIFY: where to insert (e.g., 'after method GetById'). Empty string if not applicable.")
     replaces: str = Field(default="", description="For MODIFY: description of code being replaced. Empty string if not applicable.")
+    is_delete: bool = Field(default=False, description="True to DELETE the target code section (replaces identifies what to delete)")

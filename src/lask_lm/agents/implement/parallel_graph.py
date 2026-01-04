@@ -318,6 +318,42 @@ def _process_file_decomposition_parallel(
     for comp in response.components:
         child_id = _generate_node_id()
 
+        # Inherit parent's context_files if component doesn't specify any
+        child_context_files = comp.context_files if comp.context_files else node.context_files
+
+        # Handle unchanged components (SKIP) - no decomposition needed
+        if comp.is_unchanged:
+            child_node = CodeNode(
+                node_id=child_id,
+                node_type=NodeType.BLOCK,  # Terminal type for skipped nodes
+                intent=comp.intent,
+                parent_id=node.node_id,
+                context_files=child_context_files,
+                status=NodeStatus.SKIP,  # Mark as SKIP - won't be processed
+                contracts_provided=[
+                    Contract(
+                        name=c.name,
+                        signature=c.signature,
+                        description=c.description,
+                        context_files=child_context_files,
+                        provider_node_id=child_id,
+                    )
+                    for c in comp.contracts_provided
+                ],
+            )
+            new_nodes[child_id] = child_node
+            child_ids.append(child_id)
+            # NOTE: Not added to pending - SKIP nodes don't get processed
+
+            # Still register contracts from SKIP nodes (siblings may depend on them)
+            for contract in child_node.contracts_provided:
+                combined_registry = {**contract_registry, **new_contracts}
+                issue = validate_contract_registration(contract, combined_registry)
+                if issue:
+                    validation_issues.append(issue)
+                new_contracts[contract.name] = contract
+            continue
+
         # Map component type to NodeType
         if comp.component_type in ("class", "struct", "interface", "enum"):
             child_type = NodeType.CLASS
@@ -328,9 +364,6 @@ def _process_file_decomposition_parallel(
 
         if comp.is_terminal:
             child_type = NodeType.BLOCK
-
-        # Inherit parent's context_files if component doesn't specify any
-        child_context_files = comp.context_files if comp.context_files else node.context_files
 
         child_node = CodeNode(
             node_id=child_id,
@@ -397,6 +430,41 @@ def _process_class_decomposition_parallel(
     for comp in response.components:
         child_id = _generate_node_id()
 
+        child_context_files = comp.context_files if comp.context_files else node.context_files
+
+        # Handle unchanged components (SKIP) - no decomposition needed
+        if comp.is_unchanged:
+            child_node = CodeNode(
+                node_id=child_id,
+                node_type=NodeType.BLOCK,  # Terminal type for skipped nodes
+                intent=comp.intent,
+                parent_id=node.node_id,
+                context_files=child_context_files,
+                status=NodeStatus.SKIP,  # Mark as SKIP - won't be processed
+                contracts_provided=[
+                    Contract(
+                        name=c.name,
+                        signature=c.signature,
+                        description=c.description,
+                        context_files=child_context_files,
+                        provider_node_id=child_id,
+                    )
+                    for c in comp.contracts_provided
+                ],
+            )
+            new_nodes[child_id] = child_node
+            child_ids.append(child_id)
+            # NOTE: Not added to pending - SKIP nodes don't get processed
+
+            # Still register contracts from SKIP nodes (siblings may depend on them)
+            for contract in child_node.contracts_provided:
+                combined_registry = {**contract_registry, **new_contracts}
+                issue = validate_contract_registration(contract, combined_registry)
+                if issue:
+                    validation_issues.append(issue)
+                new_contracts[contract.name] = contract
+            continue
+
         if comp.component_type in ("method", "function", "constructor"):
             child_type = NodeType.METHOD
         else:
@@ -404,8 +472,6 @@ def _process_class_decomposition_parallel(
 
         if comp.is_terminal:
             child_type = NodeType.BLOCK
-
-        child_context_files = comp.context_files if comp.context_files else node.context_files
 
         child_node = CodeNode(
             node_id=child_id,
@@ -508,13 +574,30 @@ def _process_method_decomposition_parallel(
     child_ids = []
     for comp in response.blocks:
         child_id = _generate_node_id()
+        child_context_files = comp.context_files or node.context_files
+
+        # Handle unchanged blocks (SKIP) - no decomposition needed
+        if comp.is_unchanged:
+            child_node = CodeNode(
+                node_id=child_id,
+                node_type=NodeType.BLOCK,
+                intent=comp.intent,
+                parent_id=node.node_id,
+                context_files=child_context_files,
+                status=NodeStatus.SKIP,  # Mark as SKIP - won't be processed
+            )
+            new_nodes[child_id] = child_node
+            child_ids.append(child_id)
+            # NOTE: Not added to pending - SKIP nodes don't get processed
+            continue
+
         child_node = CodeNode(
             node_id=child_id,
             node_type=NodeType.BLOCK,
             intent=comp.intent,
             parent_id=node.node_id,
             contracts_required=comp.contracts_required,
-            context_files=comp.context_files or node.context_files,
+            context_files=child_context_files,
             status=NodeStatus.PENDING,
         )
         new_nodes[child_id] = child_node
@@ -572,6 +655,7 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
         insertion_point=response.insertion_point if response.insertion_point else None,
         replaces=response.replaces if response.replaces else None,
         resolved_contracts=resolved_contracts,
+        is_delete=response.is_delete,
     )
 
     # Validate that prompt references contracts it must implement
@@ -669,7 +753,9 @@ def _build_modify_manifest(
     operations = []
     for i, prompt in enumerate(prompts):
         # Determine operation type based on prompt fields
-        if prompt.replaces:
+        if prompt.is_delete:
+            op_type = OperationType.DELETE
+        elif prompt.replaces:
             op_type = OperationType.REPLACE
         elif prompt.insertion_point:
             op_type = OperationType.INSERT

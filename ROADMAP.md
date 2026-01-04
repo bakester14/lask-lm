@@ -81,8 +81,8 @@
 
 - [x] **File reading for MODIFY** - Caller passes `existing_content` for MODIFY files; content included in LLM context
 - [ ] **AST-based location targeting** - Use tree-sitter for multi-language AST, generate accurate `line_range` and `ast_path`
-- [ ] **Smart SKIP for unchanged code** - Mark sections that don't need modification, reduce prompt generation for stable code
-- [ ] **REPLACE/DELETE operations** - Precise targeting with location metadata
+- [x] **Smart SKIP for unchanged code** - Components marked `is_unchanged=true` get SKIP status, no prompts generated
+- [x] **REPLACE/DELETE operations** - `is_delete=true` creates DELETE operations in manifest; to_comment() renders as `@delete`
 
 ---
 
