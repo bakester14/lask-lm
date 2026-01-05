@@ -29,6 +29,10 @@ from .core import (
     merge_lists,
     max_int,
     append_prompts,
+    # Comment syntax utilities
+    get_comment_syntax,
+    LANGUAGE_COMMENT_SYNTAX,
+    EXTENSION_TO_LANGUAGE,
 )
 
 __all__ = [
@@ -60,4 +64,8 @@ __all__ = [
     "merge_lists",
     "max_int",
     "append_prompts",
+    # Comment syntax utilities
+    "get_comment_syntax",
+    "LANGUAGE_COMMENT_SYNTAX",
+    "EXTENSION_TO_LANGUAGE",
 ]
