@@ -1,9 +1,153 @@
 """Core Pydantic models for the Implement agent's recursive decomposition."""
 
 import operator
+import os
 from enum import Enum
 from typing import Annotated, Any
 from pydantic import BaseModel, Field
+
+
+# Comment syntax mappings: language -> (prefix, suffix)
+LANGUAGE_COMMENT_SYNTAX: dict[str, tuple[str, str]] = {
+    "python": ("#", ""),
+    "csharp": ("//", ""),
+    "javascript": ("//", ""),
+    "typescript": ("//", ""),
+    "java": ("//", ""),
+    "c": ("//", ""),
+    "cpp": ("//", ""),
+    "go": ("//", ""),
+    "rust": ("//", ""),
+    "kotlin": ("//", ""),
+    "swift": ("//", ""),
+    "scala": ("//", ""),
+    "ruby": ("#", ""),
+    "perl": ("#", ""),
+    "shell": ("#", ""),
+    "bash": ("#", ""),
+    "powershell": ("#", ""),
+    "r": ("#", ""),
+    "yaml": ("#", ""),
+    "toml": ("#", ""),
+    "sql": ("--", ""),
+    "lua": ("--", ""),
+    "haskell": ("--", ""),
+    "html": ("<!--", "-->"),
+    "xml": ("<!--", "-->"),
+    "svg": ("<!--", "-->"),
+    "css": ("/*", "*/"),
+    "scss": ("//", ""),
+    "sass": ("//", ""),
+    "less": ("//", ""),
+    "php": ("//", ""),
+}
+
+# File extension to language mapping
+EXTENSION_TO_LANGUAGE: dict[str, str] = {
+    ".py": "python",
+    ".pyw": "python",
+    ".pyi": "python",
+    ".cs": "csharp",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".mts": "typescript",
+    ".cts": "typescript",
+    ".java": "java",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
+    ".go": "go",
+    ".rs": "rust",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".swift": "swift",
+    ".scala": "scala",
+    ".rb": "ruby",
+    ".pl": "perl",
+    ".pm": "perl",
+    ".sh": "shell",
+    ".bash": "bash",
+    ".zsh": "shell",
+    ".fish": "shell",
+    ".ps1": "powershell",
+    ".psm1": "powershell",
+    ".r": "r",
+    ".R": "r",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".sql": "sql",
+    ".lua": "lua",
+    ".hs": "haskell",
+    ".lhs": "haskell",
+    ".html": "html",
+    ".htm": "html",
+    ".xhtml": "html",
+    ".xml": "xml",
+    ".xsl": "xml",
+    ".xslt": "xml",
+    ".svg": "svg",
+    ".css": "css",
+    ".scss": "scss",
+    ".sass": "sass",
+    ".less": "less",
+    ".php": "php",
+}
+
+
+def get_comment_syntax(
+    file_path: str | None = None,
+    language: str | None = None
+) -> tuple[str, str]:
+    """
+    Get the comment syntax (prefix, suffix) for a language or file.
+
+    The comment syntax is determined in the following priority order:
+    1. Explicit language parameter (if provided)
+    2. File extension inference from file_path
+    3. Default to C-style comments (//)
+
+    Args:
+        file_path: File path to infer language from extension
+        language: Explicit language name (case-insensitive)
+
+    Returns:
+        Tuple of (prefix, suffix) for comment syntax.
+        For single-line comments, suffix is empty string.
+
+    Examples:
+        >>> get_comment_syntax(language="python")
+        ("#", "")
+        >>> get_comment_syntax(file_path="script.py")
+        ("#", "")
+        >>> get_comment_syntax(file_path="page.html")
+        ("<!--", "-->")
+        >>> get_comment_syntax()  # default
+        ("//", "")
+    """
+    # Try explicit language first
+    if language:
+        lang = language.lower()
+        if lang in LANGUAGE_COMMENT_SYNTAX:
+            return LANGUAGE_COMMENT_SYNTAX[lang]
+
+    # Infer from file extension
+    if file_path:
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in EXTENSION_TO_LANGUAGE:
+            lang = EXTENSION_TO_LANGUAGE[ext]
+            return LANGUAGE_COMMENT_SYNTAX[lang]
+
+    # Default to C-style comments
+    return ("//", "")
 
 
 class NodeType(str, Enum):
@@ -106,11 +250,55 @@ class LaskPrompt(BaseModel):
         description="True if this is a DELETE operation (removes code, no generation)"
     )
 
-    def to_comment(self, comment_prefix: str = "//") -> str:
-        """Render as a LASK-compatible comment."""
+    def to_comment(
+        self,
+        comment_prefix: str | None = None,
+        language: str | None = None
+    ) -> str:
+        """
+        Render as a LASK-compatible comment.
+
+        The comment syntax is determined in the following priority order:
+        1. Explicit comment_prefix parameter (for backward compatibility)
+        2. Explicit language parameter
+        3. File extension inference from file_path
+        4. Default to C-style comments (//)
+
+        Args:
+            comment_prefix: Explicit comment prefix (e.g., "#", "//").
+                If provided, this takes precedence over language detection.
+            language: Programming language name (e.g., "python", "html").
+                Used to look up appropriate comment syntax.
+
+        Returns:
+            A LASK-compatible comment string with proper syntax for the target language.
+
+        Examples:
+            >>> prompt = LaskPrompt(file_path="script.py", intent="Add logging")
+            >>> prompt.to_comment()  # Infers from .py extension
+            "# @ Add logging"
+            >>> prompt.to_comment(language="html")  # Explicit language
+            "<!-- @ Add logging -->"
+            >>> prompt.to_comment(comment_prefix="//")  # Explicit prefix (legacy)
+            "// @ Add logging"
+        """
+        # Determine comment syntax
+        if comment_prefix is not None:
+            # Explicit prefix provided (backward compatibility)
+            prefix, suffix = comment_prefix, ""
+        else:
+            # Use language-aware detection
+            prefix, suffix = get_comment_syntax(
+                file_path=self.file_path,
+                language=language
+            )
+
         # Handle DELETE operations specially
         if self.is_delete:
-            return f"{comment_prefix} @delete {self.replaces or 'target code'}"
+            content = f"@delete {self.replaces or 'target code'}"
+            if suffix:
+                return f"{prefix} {content} {suffix}"
+            return f"{prefix} {content}"
 
         parts = []
 
@@ -134,7 +322,10 @@ class LaskPrompt(BaseModel):
 
         parts.append(intent)
 
-        return f"{comment_prefix} @ {' '.join(parts)}"
+        content = f"@ {' '.join(parts)}"
+        if suffix:
+            return f"{prefix} {content} {suffix}"
+        return f"{prefix} {content}"
 
 
 class CodeNode(BaseModel):
