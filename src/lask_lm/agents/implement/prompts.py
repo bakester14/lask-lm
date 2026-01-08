@@ -124,16 +124,25 @@ TERMINAL_BLOCK_PROMPT = """You are creating a LASK prompt for a terminal code bl
 
 Given:
 - Intent: what this block should accomplish
-- Context: contracts it depends on, files for @context
-- Parent structure: where this fits in the larger code
-- Contract obligations: signatures this block MUST implement (if any)
+- Target file: the file this prompt will be written to
+- Contracts: interface signatures this block depends on or must implement
 
 Create a LASK prompt description that is:
 1. Clear and specific about what code to generate
-2. References dependencies via @context directives where helpful
-3. Fits within ~10 lines of generated code
-4. Self-contained enough that LASK can generate it without seeing sibling blocks
-5. If contract obligations are provided, the intent MUST describe implementing those exact signatures
+2. Fits within ~10 lines of generated code
+3. Self-contained enough that LASK can generate it without seeing sibling blocks
+4. If contract obligations are provided, the intent MUST describe implementing those exact signatures
+
+@context DIRECTIVE RULES:
+The @context(file) directive includes another file's content when the prompt is expanded.
+- NEVER include the target file in context_files - it is implicit and redundant
+- Use @context for other files the generated code depends on (interfaces, base classes, helpers)
+- @context works for one-way dependencies; for two-way dependencies use contracts instead
+
+Example: If the target file is "src/UserService.cs":
+  - WRONG: context_files: ["src/UserService.cs"] - target file is implicit
+  - CORRECT: context_files: ["src/IUserRepository.cs"] - needed dependency
+  - CORRECT: context_files: [] - no external files needed
 
 DELETE OPERATIONS (MODIFY mode only):
 If the intent indicates code should be REMOVED rather than added or modified:

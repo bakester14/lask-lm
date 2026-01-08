@@ -537,12 +537,13 @@ def _process_method_decomposition_parallel(
             if name in contract_registry
         ]
 
+        target_file = node.context_files[0] if node.context_files else "unknown"
         lask_prompt = LaskPrompt(
-            file_path=node.context_files[0] if node.context_files else "unknown",
+            file_path=target_file,
             intent=response.terminal_intent or node.intent,
             directives=[
                 LaskDirective(directive_type="context", value=f)
-                for f in node.context_files
+                for f in node.context_files[1:]  # Skip target file (index 0)
             ],
             resolved_contracts=resolved_contracts,
         )
@@ -622,7 +623,7 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
 
     context_parts = [f"Intent: {node.intent}"]
     if node.context_files:
-        context_parts.append(f"Context files: {', '.join(node.context_files)}")
+        context_parts.append(f"Target file: {node.context_files[0]}")
     if node.contracts_required:
         context_parts.append(f"Required contracts: {', '.join(node.contracts_required)}")
 
