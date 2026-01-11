@@ -127,6 +127,7 @@ def router_node(state: ParallelImplementState | ImplementState) -> dict:
             context_files=[file_target.path],
             contracts_provided=file_target.contracts_provided,
             existing_content=file_target.existing_content,
+            operation=file_target.operation,
         )
         nodes[node_id] = node
         root_ids.append(node_id)
@@ -219,9 +220,13 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
     if current_depth >= max_depth:
         return _emit_terminal_parallel(node, contract_registry)
 
+    # BLOCK nodes are always terminal - emit directly
+    if node.node_type == NodeType.BLOCK:
+        return _emit_terminal_parallel(node, contract_registry)
+
     llm = _get_llm()
 
-    # Select prompt based on node type
+    # Select prompt based on node type (FILE, CLASS, METHOD only)
     system_prompt = SYSTEM_PROMPT_BASE + "\n\n" + DECOMPOSITION_PROMPTS[node.node_type.value]
 
     # Build context message
@@ -340,6 +345,7 @@ def _process_file_decomposition_parallel(
                     )
                     for c in comp.contracts_provided
                 ],
+                operation=node.operation,  # Inherit operation from parent
             )
             new_nodes[child_id] = child_node
             child_ids.append(child_id)
@@ -383,6 +389,7 @@ def _process_file_decomposition_parallel(
             contracts_required=comp.contracts_required,
             context_files=child_context_files,
             status=NodeStatus.PENDING,
+            operation=node.operation,  # Inherit operation from parent
         )
 
         new_nodes[child_id] = child_node
@@ -451,6 +458,7 @@ def _process_class_decomposition_parallel(
                     )
                     for c in comp.contracts_provided
                 ],
+                operation=node.operation,  # Inherit operation from parent
             )
             new_nodes[child_id] = child_node
             child_ids.append(child_id)
@@ -491,6 +499,7 @@ def _process_class_decomposition_parallel(
             contracts_required=comp.contracts_required,
             context_files=child_context_files,
             status=NodeStatus.PENDING,
+            operation=node.operation,  # Inherit operation from parent
         )
 
         new_nodes[child_id] = child_node
@@ -586,6 +595,7 @@ def _process_method_decomposition_parallel(
                 parent_id=node.node_id,
                 context_files=child_context_files,
                 status=NodeStatus.SKIP,  # Mark as SKIP - won't be processed
+                operation=node.operation,  # Inherit operation from parent
             )
             new_nodes[child_id] = child_node
             child_ids.append(child_id)
@@ -600,6 +610,7 @@ def _process_method_decomposition_parallel(
             contracts_required=comp.contracts_required,
             context_files=child_context_files,
             status=NodeStatus.PENDING,
+            operation=node.operation,  # Inherit operation from parent
         )
         new_nodes[child_id] = child_node
         child_ids.append(child_id)
@@ -619,7 +630,13 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
     """Emit a LASK prompt for a terminal node in parallel context."""
     llm = _get_llm()
 
-    system_prompt = SYSTEM_PROMPT_BASE + "\n\n" + DECOMPOSITION_PROMPTS["block"]
+    # Select operation-specific terminal prompt
+    if node.operation == FileOperation.MODIFY:
+        block_prompt = DECOMPOSITION_PROMPTS["block_modify"]
+    else:
+        block_prompt = DECOMPOSITION_PROMPTS["block_create"]
+
+    system_prompt = SYSTEM_PROMPT_BASE + "\n\n" + block_prompt
 
     context_parts = [f"Intent: {node.intent}"]
     if node.context_files:

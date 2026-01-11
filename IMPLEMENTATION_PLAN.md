@@ -41,10 +41,10 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 - [x] Fan-out at each decomposition level via `dispatch_to_parallel` routing
 - [x] Aggregate results via `aggregator_node` that rebuilds pending from node statuses
 - [x] State reducers (`merge_dicts`, `append_prompts`, `max_int`) for merging parallel results
-- [x] Unit tests for all components (22 tests passing)
+- [x] Unit tests for all components
 - [x] E2E test demonstrating parallel execution with multiple files
 - [x] Consolidated to single implementation (removed sequential graph.py and nodes.py)
-- [x] Compatibility tests ensuring backwards-compatible API (11 tests passing)
+- [x] Compatibility tests ensuring backwards-compatible API
 
 ### Phase 4.5: Grouped Output & MODIFY Manifest ✅ COMPLETE
 - [x] New models: `OperationType`, `LocationMetadata`, `ModifyOperation`, `ModifyManifest`, `OrderedFilePrompts`, `GroupedOutput`
@@ -52,8 +52,7 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 - [x] `collector_node` groups prompts by file with tree-traversal ordering
 - [x] MODIFY manifest generation with location-based metadata
 - [x] `LaskPromptOutput` schema extended with `insertion_point` and `replaces` fields
-- [x] Unit tests for grouped output (16 tests)
-- [x] All 48 tests passing
+- [x] Unit tests for grouped output
 
 ### Phase 5: Contract Registry ✅ COMPLETE
 - [x] Register contracts from each node as they're created
@@ -64,13 +63,16 @@ The Implement agent recursively decomposes code generation tasks into LASK-compa
 - [x] Detect circular dependencies (DFS-based cycle detection)
 - [x] Include contract signatures in LASK prompt context (`resolved_contracts` field)
 - [x] Propagate all validation issues to `GroupedOutput.validation_issues`
-- [x] Unit tests for validation (17 tests)
+- [x] Unit tests for validation
 
-### Phase 6: MODIFY Support ⬜ NOT STARTED
-- [ ] Parse existing file structure (AST or heuristic)
-- [ ] Mark unchanged nodes as `SKIP`
-- [ ] Support REPLACE/INSERT/DELETE operations
-- [ ] Emit edit-style LASK prompts for modifications
+### Phase 6: MODIFY Support ✅ COMPLETE
+- [x] SMART SKIP: Mark unchanged components as `is_unchanged=true` (status=SKIP)
+- [x] Support REPLACE/INSERT/DELETE operations via `insertion_point`, `replaces`, `is_delete` fields
+- [x] Operation-specific terminal prompts (`TERMINAL_BLOCK_CREATE_PROMPT`, `TERMINAL_BLOCK_MODIFY_PROMPT`)
+- [x] Operation type propagation through decomposition tree (`CodeNode.operation` field)
+- [x] Existing LASK prompt recognition (`// @` comments treated as prompts, not code)
+- [x] Language-aware comment syntax for LASK prompts (C#, Python, HTML, etc.)
+- [ ] AST-based parsing of existing file structure (future enhancement)
 
 ## Future Considerations
 
@@ -89,23 +91,25 @@ src/lask_lm/
 │   └── implement/
 │       ├── parallel_graph.py # LangGraph with Send() API, tree traversal, grouped output, validation integration
 │       ├── validation.py    # Contract registry validation functions
-│       ├── prompts.py       # Decomposition prompts
+│       ├── prompts.py       # Decomposition prompts (CREATE and MODIFY-specific terminal prompts)
 │       └── schemas.py       # LLM output schemas (including MODIFY fields)
 ├── tools/                   # (placeholder for LASK emitter tools)
 ├── main.py                  # Entry point
 └── mcp_server.py            # MCP server for Claude Code
 
 tests/
-├── test_parallel_graph.py       # Unit tests for parallel spawning (22 tests)
-├── test_graph_compatibility.py  # Compatibility tests for API (11 tests)
-├── test_grouped_output.py       # Tests for grouped output and MODIFY manifest (16 tests)
-└── test_contract_validation.py  # Tests for contract validation (17 tests)
+├── test_parallel_graph.py       # Unit tests for parallel spawning
+├── test_graph_compatibility.py  # Compatibility tests for API
+├── test_grouped_output.py       # Tests for grouped output and MODIFY manifest
+├── test_contract_validation.py  # Tests for contract validation
+├── test_comment_syntax.py       # Tests for language-aware comment syntax
+└── test_existing_lask_prompts.py # Tests for MODIFY operations and LASK prompt recognition
 ```
 
 ## Testing
 
 ```bash
-# Run all tests (65 total)
+# Run all tests
 source .venv/bin/activate
 PYTHONPATH=src python -m pytest tests/ -v
 

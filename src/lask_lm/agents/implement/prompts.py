@@ -14,7 +14,21 @@ IMPORTANT: You do NOT generate code. You generate either:
 2. A list of child components to decompose further (recursive case)
 
 Context is passed via contracts - type signatures and descriptions that tell siblings
-what interfaces are available without sharing full implementations."""
+what interfaces are available without sharing full implementations.
+
+RECOGNIZING EXISTING LASK PROMPTS:
+When analyzing existing file content, you may encounter LASK prompt comments - these are
+comments that start with "@ " after the language's comment marker. Examples:
+- C#/Java/TypeScript: // @ Implement validation logic
+- Python: # @ Add error handling
+- HTML: <!-- @ Create form layout -->
+
+These are prompts (like the ones you produce), not code. They represent terminal nodes -
+either from a previous decomposition or manually written. During MODIFY operations:
+- Treat existing prompts as terminal nodes that may need updating
+- If the modification intent affects a prompt, produce a new/updated prompt for that location
+- If an existing prompt is unaffected by the modification, it can be left unchanged
+- The expansion of prompts into actual code is handled separately by LASK, not by you"""
 
 
 DECOMPOSE_FILE_PROMPT = """You are decomposing a FILE into its structural components.
@@ -41,6 +55,10 @@ Set is_unchanged=true for components that:
 - Have functionality not mentioned in the modification intent
 When in doubt about whether a component needs changes, prefer is_unchanged=true if
 the component's functionality isn't mentioned in the modification intent.
+
+Note: If existing content contains LASK prompt comments (e.g., "// @ ..."), these are
+prompts awaiting expansion, not code. Treat them as terminal nodes - they may need
+updating if the modification intent affects them, or can be skipped if unaffected.
 
 CONTRACT OBLIGATIONS:
 If this file has "Contracts this node MUST provide" listed in the context,
@@ -73,6 +91,8 @@ If existing file content is provided and this class exists in it:
 - Set is_unchanged=true for members that don't need modification
 - Only decompose members where the change actually applies
 - Preserve unchanged members by marking them is_unchanged=true
+- If members contain LASK prompt comments (e.g., "// @ ..."), treat those as prompts
+  awaiting expansion - update them if affected by the modification intent
 
 CONTRACT OBLIGATIONS:
 If this class has "Contracts this node MUST provide" listed in the context,
@@ -106,6 +126,8 @@ SMART SKIP (MODIFY mode only):
 If modifying an existing method, set is_unchanged=true for blocks that:
 - Don't need any modification based on the intent
 - Contain stable logic not affected by the change
+- If blocks contain LASK prompt comments (e.g., "// @ ..."), treat those as prompts
+  awaiting expansion - update them if affected by the modification intent
 
 CONTRACT OBLIGATIONS:
 If this method has "Contracts this node MUST provide" listed in the context,
@@ -120,7 +142,7 @@ Include any @context files needed.
 Output format: JSON matching the DecomposeMethodOutput schema."""
 
 
-TERMINAL_BLOCK_PROMPT = """You are creating a LASK prompt for a terminal code block.
+TERMINAL_BLOCK_CREATE_PROMPT = """You are creating a LASK prompt for a terminal code block.
 
 Given:
 - Intent: what this block should accomplish
@@ -134,26 +156,42 @@ Create a LASK prompt description that is:
 4. If contract obligations are provided, the intent MUST describe implementing those exact signatures
 
 @context DIRECTIVE RULES:
-The @context(file) directive includes another file's content when the prompt is expanded.
-- NEVER include the target file in context_files - it is implicit and redundant
-- Use @context for other files the generated code depends on (interfaces, base classes, helpers)
-- @context works for one-way dependencies; for two-way dependencies use contracts instead
+- NEVER include the target file in context_files (it's implicit)
+- Use @context for dependencies (interfaces, base classes, helpers)
 
-Example: If the target file is "src/UserService.cs":
-  - WRONG: context_files: ["src/UserService.cs"] - target file is implicit
-  - CORRECT: context_files: ["src/IUserRepository.cs"] - needed dependency
-  - CORRECT: context_files: [] - no external files needed
+You are NOT generating code. You are describing what code should be generated.
 
-DELETE OPERATIONS (MODIFY mode only):
-If the intent indicates code should be REMOVED rather than added or modified:
-- Set is_delete=true
-- Use the 'replaces' field to describe what code section should be deleted
-- The 'intent' should explain WHY the deletion is needed (for documentation)
-- Example: intent="Remove deprecated validation", replaces="the LegacyValidate method"
+Output: JSON matching LaskPromptOutput schema."""
 
-You are NOT generating code. You are describing what code should be generated (or deleted).
 
-Output format: JSON matching the LaskPromptOutput schema."""
+TERMINAL_BLOCK_MODIFY_PROMPT = """You are creating a LASK prompt for modifying existing code.
+
+MODIFY OPERATIONS - Choose one:
+
+1. INSERT (new code at location):
+   - Set insertion_point: "after method X", "before class declaration"
+   - Leave replaces empty
+
+2. REPLACE (update existing code):
+   - Set replaces: description of code being replaced
+   - Intent describes what new code should do
+
+3. DELETE (remove code):
+   - Set is_delete=true
+   - Set replaces: what to delete
+   - Intent explains WHY deletion is needed
+
+EXISTING "// @ ..." COMMENTS:
+These are LASK prompts, not code. To modify one, use REPLACE with replaces describing that prompt.
+
+FIELD PRIORITY: is_delete > replaces > insertion_point
+- is_delete=true + replaces = DELETE
+- replaces only = REPLACE
+- insertion_point only = INSERT
+
+@context RULES: Never include target file (implicit). Use for dependencies only.
+
+Output: JSON matching LaskPromptOutput schema."""
 
 
 # Prompt registry by node type
@@ -161,5 +199,6 @@ DECOMPOSITION_PROMPTS = {
     "file": DECOMPOSE_FILE_PROMPT,
     "class": DECOMPOSE_CLASS_PROMPT,
     "method": DECOMPOSE_METHOD_PROMPT,
-    "block": TERMINAL_BLOCK_PROMPT,
+    "block_create": TERMINAL_BLOCK_CREATE_PROMPT,
+    "block_modify": TERMINAL_BLOCK_MODIFY_PROMPT,
 }

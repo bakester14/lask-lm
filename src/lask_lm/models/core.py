@@ -372,6 +372,12 @@ class CodeNode(BaseModel):
         description="For MODIFY FILE nodes: the current file content"
     )
 
+    # Operation type (inherited from root FileTarget, propagated to all descendants)
+    operation: FileOperation | None = Field(
+        default=None,
+        description="Operation type (CREATE or MODIFY) inherited from root FileTarget"
+    )
+
 
 class FileTarget(BaseModel):
     """A file that the Implement agent will create or modify."""
