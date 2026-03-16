@@ -30,15 +30,19 @@ class ComponentOutput(BaseModel):
 
 class DecomposeFileOutput(BaseModel):
     """LLM output for FILE-level decomposition."""
-    components: list[ComponentOutput] = Field(description="Structural components of the file")
+    is_terminal: bool = Field(description="True if the entire file is simple enough to be a single LASK prompt (dataclasses, DTOs, init files, config, single-class modules ≤30 lines)")
+    terminal_intent: str = Field(description="If terminal, the full intent preserving ALL specifics (field names, types, domain semantics). Empty string if not terminal.")
+    components: list[ComponentOutput] = Field(description="Structural components of the file. Empty list if terminal.")
     file_header_intent: str = Field(description="Intent for file-level imports/header, or empty string if not needed")
     notes: str = Field(description="Any notes about the decomposition strategy, or empty string if none")
 
 
 class DecomposeClassOutput(BaseModel):
     """LLM output for CLASS-level decomposition."""
-    class_declaration_intent: str = Field(description="Intent for the class declaration line (inheritance, attributes, etc.)")
-    components: list[ComponentOutput] = Field(description="Class members (methods, properties, fields)")
+    is_terminal: bool = Field(description="True if the entire class is simple enough to be a single LASK prompt (dataclasses, DTOs, simple config classes, enums ≤30 lines)")
+    terminal_intent: str = Field(description="If terminal, the full intent preserving ALL specifics (field names, types, domain semantics). Empty string if not terminal.")
+    class_declaration_intent: str = Field(description="Intent for the class declaration line (inheritance, attributes, etc.). Empty string if terminal.")
+    components: list[ComponentOutput] = Field(description="Class members (methods, properties, fields). Empty list if terminal.")
     notes: str = Field(description="Any notes, or empty string if none")
 
 

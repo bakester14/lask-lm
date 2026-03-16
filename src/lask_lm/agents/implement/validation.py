@@ -8,6 +8,8 @@ during the decomposition process:
 3. Final: After all decomposition, check all dependencies are satisfied
 """
 
+import re
+
 from lask_lm.models import (
     Contract,
     CodeNode,
@@ -241,5 +243,74 @@ def validate_contract_fulfillment(
             node_id=node_id,
             contract_name=contract.name,
         ))
+
+    return issues
+
+
+# Common type/keyword tokens to filter from contract signatures when
+# checking that the intent references domain-specific identifiers.
+_SIGNATURE_NOISE_TOKENS = frozenset({
+    "str", "int", "list", "dict", "bool", "class", "interface", "def",
+    "none", "float", "tuple", "set", "optional", "any", "task", "void",
+    "async", "return", "dataclass", "self", "cls", "true", "false",
+    "string", "object", "var", "val", "const", "let", "new", "public",
+    "private", "protected", "static", "abstract", "override", "virtual",
+    "readonly", "get", "in", "out", "ref", "params",
+})
+
+
+def validate_signature_consistency(
+    prompt_intent: str,
+    contracts_provided: list[Contract],
+    node_id: str,
+) -> list[ContractValidationIssue]:
+    """
+    Validate that a terminal prompt's intent is consistent with contract signatures.
+
+    Extracts domain-specific identifiers from contract signatures and checks
+    that a sufficient fraction appear in the intent text. This catches cases
+    where the LLM generates intent that contradicts the contract signature
+    (e.g., describing "latitude, longitude" for a Location with "connections, items").
+
+    Uses WARNING severity since intent is prose and may legitimately paraphrase.
+
+    Args:
+        prompt_intent: The intent text from the LaskPrompt
+        contracts_provided: Contracts this node is obligated to implement
+        node_id: ID of the node for error reporting
+
+    Returns:
+        List of validation issues for signature/intent mismatches
+    """
+    issues = []
+    intent_lower = prompt_intent.lower()
+
+    for contract in contracts_provided:
+        # Extract word-like identifiers from the signature
+        tokens = re.findall(r'[A-Za-z_]\w*', contract.signature)
+
+        # Filter out common types/keywords and deduplicate
+        domain_ids = {t for t in tokens if t.lower() not in _SIGNATURE_NOISE_TOKENS}
+
+        # Skip if too few domain identifiers to validate meaningfully
+        if len(domain_ids) < 2:
+            continue
+
+        # Case-insensitive check of each identifier against intent
+        matched = sum(1 for ident in domain_ids if ident.lower() in intent_lower)
+        match_ratio = matched / len(domain_ids)
+
+        if match_ratio < 0.5:
+            issues.append(ContractValidationIssue(
+                severity=ValidationSeverity.WARNING,
+                code="SIGNATURE_INTENT_MISMATCH",
+                message=(
+                    f"Terminal prompt for node '{node_id}' may not reflect "
+                    f"contract '{contract.name}' signature: only {matched}/{len(domain_ids)} "
+                    f"domain identifiers found in intent"
+                ),
+                node_id=node_id,
+                contract_name=contract.name,
+            ))
 
     return issues

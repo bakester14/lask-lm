@@ -38,6 +38,7 @@ from .validation import (
     validate_all_dependencies_satisfied,
     detect_circular_dependencies,
     validate_contract_fulfillment,
+    validate_signature_consistency,
 )
 from .prompts import SYSTEM_PROMPT_BASE, DECOMPOSITION_PROMPTS
 from .schemas import (
@@ -59,7 +60,17 @@ def _generate_node_id() -> str:
 
 def _get_llm():
     """Get the LLM instance for decomposition."""
-    return ChatOpenAI(model="gpt-4o", temperature=0.3)
+    return ChatOpenAI(model="gpt-5.1-codex-mini", temperature=0.3)
+
+
+import re
+
+_CONTROL_CHAR_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+
+def _sanitize_text(s: str) -> str:
+    """Strip control characters (U+0000–U+001F except \\n, \\r, \\t) from text."""
+    return _CONTROL_CHAR_RE.sub('', s)
 
 
 def _structured_output(llm, schema):
@@ -158,6 +169,10 @@ def dispatch_to_parallel(state: ParallelImplementState) -> Sequence[Send] | Lite
     if not pending:
         return "collector"
 
+    # Collect all target file paths for context
+    target_files = state.get("target_files", [])
+    target_file_paths = [f.path for f in target_files]
+
     sends = []
     for node_id in pending:
         node = nodes.get(node_id)
@@ -170,6 +185,7 @@ def dispatch_to_parallel(state: ParallelImplementState) -> Sequence[Send] | Lite
                 "contract_registry": state.get("contract_registry", {}),
                 "current_depth": state.get("current_depth", 0),
                 "max_depth": state.get("max_depth", 10),
+                "target_file_paths": target_file_paths,
             }
             sends.append(Send("parallel_decomposer", single_state))
 
@@ -212,17 +228,18 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
     current_depth = state.get("current_depth", 0)
     max_depth = state.get("max_depth", 10)
     contract_registry = state.get("contract_registry", {})
+    target_file_paths = state.get("target_file_paths", [])
 
     # Collect validation issues during processing
     validation_issues: list[ContractValidationIssue] = []
 
     # Safety check - force terminal if too deep
     if current_depth >= max_depth:
-        return _emit_terminal_parallel(node, contract_registry)
+        return _emit_terminal_parallel(node, contract_registry, target_file_paths)
 
     # BLOCK nodes are always terminal - emit directly
     if node.node_type == NodeType.BLOCK:
-        return _emit_terminal_parallel(node, contract_registry)
+        return _emit_terminal_parallel(node, contract_registry, target_file_paths)
 
     llm = _get_llm()
 
@@ -231,6 +248,10 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
 
     # Build context message
     context_parts = [f"Intent: {node.intent}"]
+
+    # Include all target file paths so LLM knows what files exist in this plan
+    if target_file_paths:
+        context_parts.append(f"Files in this plan: {', '.join(target_file_paths)}")
 
     # Include contract obligations (what this node must provide)
     if node.contracts_provided:
@@ -273,7 +294,7 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
 
     if node.node_type == NodeType.FILE:
         response = _structured_output(llm, DecomposeFileOutput).invoke(messages)
-        result = _process_file_decomposition_parallel(node, response, current_depth, contract_registry)
+        result = _process_file_decomposition_parallel(node, response, current_depth, contract_registry, target_file_paths)
         # Merge validation issues
         result_issues = result.get("validation_issues", [])
         result["validation_issues"] = validation_issues + result_issues
@@ -281,7 +302,7 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
 
     elif node.node_type == NodeType.CLASS:
         response = _structured_output(llm, DecomposeClassOutput).invoke(messages)
-        result = _process_class_decomposition_parallel(node, response, current_depth, contract_registry)
+        result = _process_class_decomposition_parallel(node, response, current_depth, contract_registry, target_file_paths)
         result_issues = result.get("validation_issues", [])
         result["validation_issues"] = validation_issues + result_issues
         return result
@@ -294,7 +315,7 @@ def parallel_decomposer_node(state: SingleNodeState) -> dict:
         return result
 
     elif node.node_type == NodeType.BLOCK:
-        result = _emit_terminal_parallel(node, contract_registry)
+        result = _emit_terminal_parallel(node, contract_registry, target_file_paths)
         result["validation_issues"] = validation_issues
         return result
 
@@ -306,12 +327,57 @@ def _process_file_decomposition_parallel(
     response: DecomposeFileOutput,
     current_depth: int,
     contract_registry: dict[str, Contract],
+    target_file_paths: list[str] | None = None,
 ) -> dict:
     """Process FILE decomposition response in parallel context."""
     new_nodes = {}
     new_pending = []
     new_contracts = {}
     validation_issues: list[ContractValidationIssue] = []
+
+    # Terminal file: emit a single LaskPrompt directly — NO second LLM call
+    if response.is_terminal and response.terminal_intent:
+        intent = _sanitize_text(response.terminal_intent)
+
+        # Resolve contracts for @context directives
+        resolved_contracts = [
+            contract_registry[name]
+            for name in node.contracts_required
+            if name in contract_registry
+        ]
+
+        # Build @context directives from contracts (skip target file)
+        target_file = node.context_files[0] if node.context_files else "unknown"
+        context_set = set()
+        directives = []
+        for contract in resolved_contracts:
+            for ctx_file in contract.context_files:
+                if ctx_file != target_file and ctx_file not in context_set:
+                    directives.append(LaskDirective(directive_type="context", value=ctx_file))
+                    context_set.add(ctx_file)
+
+        lask_prompt = LaskPrompt(
+            file_path=target_file,
+            intent=intent,
+            directives=directives,
+            resolved_contracts=resolved_contracts,
+        )
+
+        validation_issues = validate_contract_fulfillment(
+            lask_prompt.intent, node.contracts_provided, node.node_id,
+        )
+        validation_issues.extend(validate_signature_consistency(
+            lask_prompt.intent, node.contracts_provided, node.node_id,
+        ))
+
+        updated_node = node.model_copy()
+        updated_node.status = NodeStatus.COMPLETE
+        updated_node.lask_prompt = lask_prompt
+        return {
+            "nodes": {node.node_id: updated_node},
+            "lask_prompts": [lask_prompt],
+            "validation_issues": validation_issues,
+        }
 
     # Mark current node as decomposing
     updated_node = node.model_copy()
@@ -423,12 +489,55 @@ def _process_class_decomposition_parallel(
     response: DecomposeClassOutput,
     current_depth: int,
     contract_registry: dict[str, Contract],
+    target_file_paths: list[str] | None = None,
 ) -> dict:
     """Process CLASS decomposition response in parallel context."""
     new_nodes = {}
     new_pending = []
     new_contracts = {}
     validation_issues: list[ContractValidationIssue] = []
+
+    # Terminal class: emit a single LaskPrompt directly — NO second LLM call
+    if response.is_terminal and response.terminal_intent:
+        intent = _sanitize_text(response.terminal_intent)
+
+        resolved_contracts = [
+            contract_registry[name]
+            for name in node.contracts_required
+            if name in contract_registry
+        ]
+
+        target_file = node.context_files[0] if node.context_files else "unknown"
+        context_set = set()
+        directives = []
+        for contract in resolved_contracts:
+            for ctx_file in contract.context_files:
+                if ctx_file != target_file and ctx_file not in context_set:
+                    directives.append(LaskDirective(directive_type="context", value=ctx_file))
+                    context_set.add(ctx_file)
+
+        lask_prompt = LaskPrompt(
+            file_path=target_file,
+            intent=intent,
+            directives=directives,
+            resolved_contracts=resolved_contracts,
+        )
+
+        validation_issues = validate_contract_fulfillment(
+            lask_prompt.intent, node.contracts_provided, node.node_id,
+        )
+        validation_issues.extend(validate_signature_consistency(
+            lask_prompt.intent, node.contracts_provided, node.node_id,
+        ))
+
+        updated_node = node.model_copy()
+        updated_node.status = NodeStatus.COMPLETE
+        updated_node.lask_prompt = lask_prompt
+        return {
+            "nodes": {node.node_id: updated_node},
+            "lask_prompts": [lask_prompt],
+            "validation_issues": validation_issues,
+        }
 
     updated_node = node.model_copy()
     updated_node.status = NodeStatus.DECOMPOSING
@@ -549,7 +658,7 @@ def _process_method_decomposition_parallel(
         target_file = node.context_files[0] if node.context_files else "unknown"
         lask_prompt = LaskPrompt(
             file_path=target_file,
-            intent=response.terminal_intent or node.intent,
+            intent=_sanitize_text(response.terminal_intent or node.intent),
             directives=[
                 LaskDirective(directive_type="context", value=f)
                 for f in node.context_files[1:]  # Skip target file (index 0)
@@ -563,6 +672,11 @@ def _process_method_decomposition_parallel(
             node.contracts_provided,
             node.node_id,
         )
+        validation_issues.extend(validate_signature_consistency(
+            lask_prompt.intent,
+            node.contracts_provided,
+            node.node_id,
+        ))
 
         updated_node = node.model_copy()
         updated_node.status = NodeStatus.COMPLETE
@@ -626,7 +740,7 @@ def _process_method_decomposition_parallel(
     }
 
 
-def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
+def _emit_terminal_parallel(node: CodeNode, contract_registry: dict, target_file_paths: list[str] | None = None) -> dict:
     """Emit a LASK prompt for a terminal node in parallel context."""
     llm = _get_llm()
 
@@ -638,11 +752,20 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
 
     system_prompt = SYSTEM_PROMPT_BASE + "\n\n" + block_prompt
 
-    context_parts = [f"Intent: {node.intent}"]
+    context_parts = [f"Intent: {_sanitize_text(node.intent)}"]
     if node.context_files:
         context_parts.append(f"Target file: {node.context_files[0]}")
+    if target_file_paths:
+        context_parts.append(f"Files in this plan: {', '.join(target_file_paths)}")
     if node.contracts_required:
-        context_parts.append(f"Required contracts: {', '.join(node.contracts_required)}")
+        resolved = [contract_registry.get(name) for name in node.contracts_required if name in contract_registry]
+        if resolved:
+            context_parts.append("Required contracts (available dependencies):")
+            for c in resolved:
+                if c:
+                    context_parts.append(f"  - {c.name}: {c.signature} -- {c.description}")
+        else:
+            context_parts.append(f"Required contracts: {', '.join(node.contracts_required)}")
 
     from langchain_core.messages import SystemMessage, HumanMessage
     response = _structured_output(llm, LaskPromptOutput).invoke([
@@ -667,7 +790,7 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
 
     lask_prompt = LaskPrompt(
         file_path=node.context_files[0] if node.context_files else "unknown",
-        intent=response.intent,
+        intent=_sanitize_text(response.intent),
         directives=directives,
         # Include MODIFY metadata if provided (empty string becomes None)
         insertion_point=response.insertion_point if response.insertion_point else None,
@@ -682,6 +805,11 @@ def _emit_terminal_parallel(node: CodeNode, contract_registry: dict) -> dict:
         node.contracts_provided,
         node.node_id,
     )
+    validation_issues.extend(validate_signature_consistency(
+        lask_prompt.intent,
+        node.contracts_provided,
+        node.node_id,
+    ))
 
     updated_node = node.model_copy()
     updated_node.status = NodeStatus.COMPLETE

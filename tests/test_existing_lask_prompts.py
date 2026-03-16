@@ -165,6 +165,8 @@ class TestExistingLaskPromptsInContent:
         }
 
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="ValidationPrompt",
@@ -227,6 +229,8 @@ class TestExistingLaskPromptsInContent:
         }
 
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 # Existing code should potentially be marked unchanged
                 ComponentOutput(
@@ -374,6 +378,8 @@ class TestUpdateExistingPromptScenario:
 
         # Response should be an updated prompt, not preserving the old one unchanged
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="EmailValidation",
@@ -454,6 +460,8 @@ class TestSkipUnaffectedPromptScenario:
 
         # Response should skip unrelated prompts
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 # These existing prompts are unaffected
                 ComponentOutput(
@@ -605,6 +613,8 @@ class TestOperationPropagation:
         )
 
         response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="TestClass",
@@ -647,6 +657,8 @@ class TestOperationPropagation:
         )
 
         response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="UnchangedClass",

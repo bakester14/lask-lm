@@ -614,3 +614,4 @@ class SingleNodeState(TypedDict, total=False):
     contract_registry: dict[str, Contract]
     current_depth: int
     max_depth: int
+    target_file_paths: list[str]

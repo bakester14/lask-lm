@@ -33,7 +33,23 @@ either from a previous decomposition or manually written. During MODIFY operatio
 
 DECOMPOSE_FILE_PROMPT = """You are decomposing a FILE into its structural components.
 
-Given a file intent and context, break it down into:
+TERMINAL FILE CHECK (do this FIRST):
+Before decomposing, check if this file is simple enough to handle as a single unit.
+Mark is_terminal=true if the file is ANY of:
+- A dataclass, DTO, or data model file (fields + minimal methods)
+- An __init__.py or module init file
+- A config/settings file
+- A single-class module with no complex logic
+- A simple enum or constants file
+- Any file that would be ≤30 lines of generated code
+
+When marking terminal:
+- Set terminal_intent to a COMPLETE description that preserves ALL specifics from the input:
+  field names, types, default values, inheritance, domain semantics, decorators, docstrings.
+  Do NOT summarize or generalize — copy every detail from the input description.
+- Set components to an empty list.
+
+If NOT terminal, break the file down into:
 - Classes, structs, interfaces, or enums
 - Top-level functions (if applicable)
 - Import/using statements (as a single block)
@@ -65,6 +81,7 @@ If this file has "Contracts this node MUST provide" listed in the context,
 you MUST distribute these obligations among the child components. Each obligated
 contract should be assigned to exactly one child component in its contracts_provided.
 The child will then be responsible for implementing that contract.
+If the file is terminal, the terminal_intent must describe implementing ALL obligated contracts.
 
 For each component, provide:
 1. A clear intent (what it should accomplish)
@@ -81,10 +98,23 @@ Output format: JSON matching the DecomposeFileOutput schema."""
 
 DECOMPOSE_CLASS_PROMPT = """You are decomposing a CLASS into its members.
 
-Given a class intent, its contracts (what it must expose), and dependencies:
-- Break it into methods, properties, fields, and nested types
-- Each method/property gets its own intent
-- Constructors are methods with special handling
+TERMINAL CLASS CHECK (do this FIRST):
+Before decomposing, check if this class is simple enough to handle as a single unit.
+Mark is_terminal=true if the class is ANY of:
+- A dataclass, DTO, or data model (mostly fields + simple methods)
+- A simple enum or constants class
+- A config/settings class
+- Any class that would be ≤30 lines of generated code
+
+When marking terminal:
+- Set terminal_intent to a COMPLETE description that preserves ALL specifics from the input:
+  field names, types, default values, inheritance, domain semantics, decorators, docstrings.
+  Do NOT summarize or generalize — copy every detail from the input description.
+- Set components to an empty list.
+- Set class_declaration_intent to an empty string.
+
+If NOT terminal, break the class into methods, properties, fields, and nested types.
+Each method/property gets its own intent. Constructors are methods with special handling.
 
 SMART SKIP (MODIFY mode only):
 If existing file content is provided and this class exists in it:
@@ -99,6 +129,7 @@ If this class has "Contracts this node MUST provide" listed in the context,
 you are REQUIRED to ensure those contracts are fulfilled. Each obligated contract
 must be assigned to exactly one child member. The child's contracts_provided
 should include the obligated contract so it knows what signature to implement.
+If the class is terminal, the terminal_intent must describe implementing ALL obligated contracts.
 
 For each member, provide:
 1. Intent (what it should do)

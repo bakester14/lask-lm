@@ -378,6 +378,8 @@ class TestIntegration:
 
         # Mock responses for the LLM based on schema type
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="ServiceClass",
@@ -400,6 +402,8 @@ class TestIntegration:
         )
 
         class_response = DecomposeClassOutput(
+            is_terminal=False,
+            terminal_intent="",
             class_declaration_intent="public class Service",
             components=[
                 ComponentOutput(
@@ -497,6 +501,8 @@ class TestIntegration:
 
         # Terminal response for all decompositions
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="MainClass",
@@ -615,6 +621,8 @@ class TestModifyWithExistingContent:
         }
 
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="ProcessOrderValidation",

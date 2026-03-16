@@ -119,6 +119,8 @@ class TestDecompositionBehavior:
 
         # Mock the LLM response - file with non-terminal class
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="TestClass",
@@ -135,6 +137,8 @@ class TestDecompositionBehavior:
         )
 
         class_response = DecomposeClassOutput(
+            is_terminal=False,
+            terminal_intent="",
             class_declaration_intent="public class Test",
             components=[
                 ComponentOutput(
@@ -196,6 +200,8 @@ class TestDecompositionBehavior:
 
         # File decomposes to a terminal block directly
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="SimpleBlock",
@@ -261,6 +267,8 @@ class TestEndToEndBehavior:
 
         # Mock responses
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="Calculator",
@@ -328,6 +336,8 @@ class TestEndToEndBehavior:
         )
 
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="ServiceClass",
@@ -389,6 +399,8 @@ class TestEndToEndBehavior:
 
         # Response that would normally recurse
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="DeepClass",
@@ -469,6 +481,8 @@ class TestOutputFormat:
         )
 
         file_response = DecomposeFileOutput(
+            is_terminal=False,
+            terminal_intent="",
             components=[
                 ComponentOutput(
                     name="Test",
